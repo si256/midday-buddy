@@ -46,8 +46,8 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
     onBroadcast({
       breakType,
       durationMinutes,
-      locationName: loc ? loc.name : 'Central Spine Kiosk',
-      zone: loc ? loc.zone : 'Central Spine',
+      locationName: loc ? loc.name : (locations[0]?.name || 'Campus Food Court'),
+      zone: loc ? loc.zone : (locations[0]?.zone || 'Campus Grounds'),
       customNote: customNote.trim() || `Stepping out for a quick ${breakType} break!`,
     });
 
@@ -67,7 +67,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
               Broadcast Your Break
             </h2>
             <p className="text-xs text-slate-500">
-              Post availability so campus colleagues along the Spine can join.
+              Post availability so campus colleagues can connect with you.
             </p>
           </div>
           <button
@@ -156,7 +156,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
           {/* 3. Spot Selection */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              3. Meeting Spot along Central Spine / Cafeteria
+              3. Meeting Spot / Landmark
             </label>
             <select
               value={selectedLocationId}

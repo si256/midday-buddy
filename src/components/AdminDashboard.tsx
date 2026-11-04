@@ -91,7 +91,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {community.name} Moderation
             </h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Manual verification queue, member management, Central Spine spots, and security logs.
+              Manual verification queue, member management, {community.name} spots, and security logs.
             </p>
           </div>
 
@@ -139,7 +139,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div className="rounded-2xl bg-blue-50/70 p-4 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/50">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-blue-900 dark:text-blue-300">Spine Landmarks</span>
+              <span className="text-xs font-semibold text-blue-900 dark:text-blue-300">Campus Spots</span>
               <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="mt-2 text-3xl font-extrabold text-blue-700 dark:text-blue-400 font-mono-numbers">
@@ -220,7 +220,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <MapPin className="h-4 w-4" />
-          <span>Spine Landmarks ({locations.length})</span>
+          <span>Campus Spots ({locations.length})</span>
         </button>
 
         <button
@@ -539,7 +539,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Designated Central Spine & Cafeteria Spots ({locations.length})
+                Designated Campus & Cafeteria Spots ({locations.length})
               </h2>
               <p className="text-xs text-slate-500">
                 Official landmarks for quick meeting and tea/lunch coordination.

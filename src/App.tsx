@@ -152,6 +152,26 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Automatically sync activeCommunity to user's registered campus
+  React.useEffect(() => {
+    if (currentUser?.campusId && communities.length > 0) {
+      const match = communities.find((c) => c.id === currentUser.campusId);
+      if (match && match.id !== activeCommunity.id) {
+        setActiveCommunity(match);
+      }
+    }
+  }, [currentUser?.campusId, communities, activeCommunity.id]);
+
+  // Reset zone filter whenever campus changes
+  React.useEffect(() => {
+    setSelectedZone('all');
+  }, [activeCommunity.id]);
+
+  // Compute available zones dynamically from current campus locations
+  const availableCampusZones = React.useMemo(() => {
+    return Array.from(new Set(activeCommunity.locations.map((l) => l.zone))).filter(Boolean);
+  }, [activeCommunity]);
+
   const pendingApprovalsCount = allUsers.filter((u) => u.status === 'pending_approval').length;
   const unreadNotificationsCount = notifications.filter((n) => !n.isRead).length;
 
@@ -307,18 +327,23 @@ export default function App() {
   // New user registration (Server API)
   const handleRegisterNewUser = async (newUser: UserProfile) => {
     try {
+      const targetCampusId = newUser.campusId || activeCommunity.id;
       const registered = await ApiService.registerUser({
         name: newUser.name,
         email: newUser.email,
-        campusId: newUser.campusId,
+        campusId: targetCampusId,
         roleTitle: newUser.roleTitle,
-        communityId: activeCommunity.id,
+        communityId: targetCampusId,
         interests: newUser.interests,
         dietary: newUser.dietary,
         icebreaker: newUser.icebreaker,
       });
       setAllUsers((prev) => [...prev, registered]);
       setCurrentUser(registered);
+      const userCampus = communities.find((c) => c.id === targetCampusId);
+      if (userCampus) {
+        setActiveCommunity(userCampus);
+      }
       setActiveView('board');
       showToast(`Welcome ${registered.name}! Waiting approval by admin.`);
     } catch (err: any) {
@@ -415,10 +440,10 @@ export default function App() {
               <span>{activeCommunity.name} · Verified Workplace Network</span>
             </div>
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Connect for Tea & Lunch Breaks along the Central Spine
+              Connect for Tea & Lunch Breaks at {activeCommunity.name}
             </h1>
             <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-              Never eat alone or walk the 400m Spine in silence. Spontaneously find companions for chai, meals, and outdoor strolls across Siruseri IT park.
+              Never eat alone or step out in silence. Spontaneously find companions for chai, meals, and outdoor strolls across {activeCommunity.name} ({activeCommunity.city}).
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
@@ -500,17 +525,17 @@ export default function App() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider backdrop-blur-xs">
-                      {activeCommunity.name} · Central Spine
+                      {activeCommunity.name} · {activeCommunity.city}
                     </span>
                     <span className="text-xs text-amber-100">
                       {filteredPosts.filter((p) => p.expiresAt > now).length} active right now
                     </span>
                   </div>
                   <h1 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">
-                    Never eat or grab chai alone.
+                    Never eat or grab chai alone at {activeCommunity.name}.
                   </h1>
                   <p className="mt-1 text-xs sm:text-sm text-amber-100 max-w-xl">
-                    Connect with verified colleagues along the 400m Central Spine for spontaneous tea breaks, cafeteria meals, and fresh air walks.
+                    Connect with verified colleagues across {activeCommunity.name} ({activeCommunity.city}) for spontaneous tea breaks, cafeteria meals, and outdoor walks.
                   </p>
                 </div>
 
@@ -598,11 +623,10 @@ export default function App() {
                   onChange={(e) => setSelectedZone(e.target.value)}
                   className="rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  <option value="all">All Spine Zones</option>
-                  <option value="Central Spine">Central Spine Kiosks</option>
-                  <option value="Food Court 1">Food Court 1</option>
-                  <option value="Food Court 2">Food Court 2</option>
-                  <option value="Outdoor Greens">Outdoor Greens</option>
+                  <option value="all">All Campus Zones ({activeCommunity.locations.length} spots)</option>
+                  {availableCampusZones.map((z) => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -683,6 +707,12 @@ export default function App() {
         onClose={() => setIsAuthOpen(false)}
         onSuccess={(user) => {
           setCurrentUser(user);
+          if (user.campusId) {
+            const userCampus = communities.find((c) => c.id === user.campusId);
+            if (userCampus) {
+              setActiveCommunity(userCampus);
+            }
+          }
           showToast(`Signed in as ${user.name}`);
         }}
         allUsers={allUsers}
@@ -722,8 +752,8 @@ export default function App() {
         />
       )}
 
-      {/* Footer Branded for CoreReacher Enterprises */}
-      <footer className="w-full border-t border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md py-6 px-4 text-center mt-auto z-10">
+      {/* Footer Branded for CoreReacher Enterprises (Properly padded above mobile bottom nav) */}
+      <footer className="w-full border-t border-stone-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pt-6 pb-24 md:pb-6 px-4 text-center mt-auto z-10 transition-colors">
         <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-2 font-medium">
             <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-amber-500 to-orange-600 text-white text-[10px] font-bold">MB</span>

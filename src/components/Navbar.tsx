@@ -71,46 +71,67 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           </button>
 
-          {/* Campus Hub Selector (Tablet/Desktop) */}
-          <div className="relative hidden md:block">
+          {/* Campus Hub Selector (Available on both Mobile and Desktop) */}
+          <div className="relative">
             <button
               onClick={() => setShowCommunityMenu(!showCommunityMenu)}
-              className="flex items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700/80 transition-colors"
+              className="flex items-center gap-1 sm:gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 sm:px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700/80 transition-colors shadow-2xs"
+              aria-label="Select Campus Hub"
+              title="Click to switch campus hub"
             >
-              <MapPin className="h-3.5 w-3.5 text-orange-500 shrink-0" />
-              <span className="max-w-[130px] truncate">{activeCommunity.name}</span>
-              <ChevronDown className="h-3 w-3 opacity-60" />
+              <MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-orange-500 shrink-0" />
+              <span className="max-w-[75px] xs:max-w-[100px] sm:max-w-[140px] truncate">{activeCommunity.name}</span>
+              <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
             </button>
 
             {showCommunityMenu && (
-              <div 
-                className="absolute left-0 mt-1 w-64 rounded-2xl border border-stone-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in-50 zoom-in-95 duration-100"
-                onMouseLeave={() => setShowCommunityMenu(false)}
-              >
-                <div className="px-2 py-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Campus Hub Network
+              <>
+                {/* Mobile backdrop */}
+                <div 
+                  className="fixed inset-0 z-40 bg-black/40 backdrop-blur-2xs md:hidden"
+                  onClick={() => setShowCommunityMenu(false)}
+                />
+                
+                {/* Dropdown Menu */}
+                <div 
+                  className="fixed top-14 inset-x-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-full mt-1 sm:w-72 rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in-50 zoom-in-95 duration-100"
+                  onMouseLeave={() => setShowCommunityMenu(false)}
+                >
+                  <div className="flex items-center justify-between px-2 py-1.5 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-stone-100 dark:border-slate-800 mb-1">
+                    <span>Campus Hubs</span>
+                    <span className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold">{communities.length} locations</span>
+                  </div>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {communities.map((comm) => (
+                      <button
+                        key={comm.id}
+                        onClick={() => {
+                          onSelectCommunity(comm);
+                          setShowCommunityMenu(false);
+                        }}
+                        className={`flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left text-xs transition-colors ${
+                          comm.id === activeCommunity.id
+                            ? 'bg-amber-50 text-amber-950 dark:bg-amber-950/60 dark:text-amber-200 font-bold border border-amber-200/60 dark:border-amber-900/40'
+                            : 'text-slate-700 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold flex items-center justify-between">
+                            <span className="truncate">{comm.name}</span>
+                            {comm.id === activeCommunity.id && (
+                              <span className="ml-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">Active</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {comm.city} · {comm.locations.length} spots
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {communities.map((comm) => (
-                  <button
-                    key={comm.id}
-                    onClick={() => {
-                      onSelectCommunity(comm);
-                      setShowCommunityMenu(false);
-                    }}
-                    className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs transition-colors ${
-                      comm.id === activeCommunity.id
-                        ? 'bg-amber-50 text-amber-950 dark:bg-amber-950/50 dark:text-amber-200 font-semibold'
-                        : 'text-slate-700 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                    <div>
-                      <div className="font-semibold">{comm.name}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{comm.city} · {comm.memberCount} members</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              </>
             )}
           </div>
         </div>

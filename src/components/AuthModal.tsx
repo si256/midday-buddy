@@ -99,7 +99,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         employeeId: employeeId.trim().toUpperCase(),
         campusId: selectedCampusId,
         roleTitle: roleTitle.trim() || 'Software Engineer',
-        communityId: activeCommunity.id,
+        communityId: selectedCampusId,
         interests: interestsInput.split(',').map((s) => s.trim()).filter(Boolean),
         dietary,
         icebreaker: icebreaker.trim() || 'Ask me about my favorite campus food spots!',
