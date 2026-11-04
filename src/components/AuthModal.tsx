@@ -1,12 +1,12 @@
 import React from 'react';
-import { X, Lock, Mail, User, Shield, AlertCircle, ArrowRight, UserPlus, LogIn, Coffee, Eye, EyeOff, KeyRound, Check } from 'lucide-react';
+import { X, Lock, Mail, User, Shield, AlertCircle, ArrowRight, UserPlus, LogIn, Coffee, Eye, EyeOff, KeyRound, Check, HelpCircle } from 'lucide-react';
 import { Community, DietaryPreference, SocialBattery, UserProfile } from '../types';
 import { ApiService } from '../services/api';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (user: UserProfile) => void;
+  onSuccess: (user: UserProfile, mustChangePassword?: boolean) => void;
   allUsers: UserProfile[];
   communities: Community[];
   activeCommunity: Community;
@@ -22,16 +22,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   activeCommunity,
   onRegisterNew,
 }) => {
-  const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = React.useState<'signin' | 'signup' | 'forgot'>('signin');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [successMessage, setSuccessMessage] = React.useState('');
 
   // Sign up fields
   const [name, setName] = React.useState('');
+  const [employeeId, setEmployeeId] = React.useState('');
   const [roleTitle, setRoleTitle] = React.useState('');
   const [selectedCampusId, setSelectedCampusId] = React.useState(activeCommunity.id);
   const [bio, setBio] = React.useState('');
@@ -46,6 +48,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
     setIsLoading(true);
 
     try {
@@ -55,29 +58,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         password: password,
       });
 
-      onSuccess(res.user);
+      onSuccess(res.user, res.mustChangePassword);
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Invalid corporate email or password.');
+      setErrorMessage(err.message || 'Invalid Email ID or password.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Helper to pre-fill test credentials for easy QA testing
-  const handleFillTestCredentials = (testEmail: string, testPass: string) => {
-    setEmail(testEmail);
-    setPassword(testPass);
-    setErrorMessage('');
   };
 
   // Real Server-Side Registration
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
 
-    if (!name.trim() || !email.trim() || !password) {
-      setErrorMessage('Please fill in your name, corporate email, and password.');
+    if (!name.trim() || !email.trim() || !password || !employeeId.trim()) {
+      setErrorMessage('Please fill in your name, Email ID, TCS Employee ID, and password.');
       return;
     }
 
@@ -99,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         name: name.trim(),
         email: trimmedEmail,
         password: password,
+        employeeId: employeeId.trim().toUpperCase(),
         campusId: selectedCampusId,
         roleTitle: roleTitle.trim() || 'Software Engineer',
         communityId: activeCommunity.id,
@@ -117,6 +115,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  // User submits Forgot Password request (Waiting approval by admin)
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!email.trim() || !employeeId.trim()) {
+      setErrorMessage('Please provide your registered Email ID and TCS Employee ID.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const res = await ApiService.forgotPassword(email.trim().toLowerCase(), employeeId.trim().toUpperCase());
+      setSuccessMessage(res.message || 'Password reset request submitted. Waiting approval by admin.');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to submit password reset request.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in-50 duration-200">
       <div 
@@ -130,6 +151,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => {
                 setMode('signin');
                 setErrorMessage('');
+                setSuccessMessage('');
               }}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                 mode === 'signin'
@@ -143,6 +165,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => {
                 setMode('signup');
                 setErrorMessage('');
+                setSuccessMessage('');
               }}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                 mode === 'signup'
@@ -162,7 +185,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Error Notification */}
+        {/* Status Messages */}
         {errorMessage && (
           <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-800 dark:bg-rose-950/50 dark:text-rose-200 border border-rose-200 dark:border-rose-900">
             <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
@@ -170,29 +193,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* Form Body */}
-        {mode === 'signin' ? (
+        {successMessage && (
+          <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-900">
+            <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
+        {/* MODE 1: Sign In */}
+        {mode === 'signin' && (
           <div className="p-6 space-y-5">
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                 Sign in to MidDay Buddy
               </h2>
               <p className="text-xs text-slate-500">
-                Enter your corporate credentials to connect with colleagues.
+                Enter your credentials to connect with colleagues during breaks.
               </p>
             </div>
 
             <form onSubmit={handleSignIn} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Corporate Email
+                  Email ID
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     type="email"
                     required
-                    placeholder="e.g. kavitha.s@tcs.com"
+                    placeholder="e.g. name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-3 text-xs text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-white"
@@ -201,15 +231,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setErrorMessage('');
+                      setSuccessMessage('');
+                    }}
+                    className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    required
-                    placeholder="••••••••"
+                    placeholder="•••••••• (leave empty if reset approved)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-10 text-xs text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-white"
@@ -230,73 +272,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 disabled={isLoading}
                 className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 py-2.5 text-xs font-bold text-white shadow-md shadow-orange-500/20 hover:from-amber-600 hover:to-orange-700 active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                {isLoading ? 'Authenticating...' : 'Sign In with Password'}
+                {isLoading ? 'Authenticating...' : 'Sign In'}
               </button>
             </form>
 
-            {/* QA Testing Credentials Panel */}
-            <div className="border-t border-stone-100 dark:border-slate-800 pt-3.5">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                <KeyRound className="h-3.5 w-3.5 text-amber-500" />
-                <span>Test Credentials (Click to pre-fill)</span>
-              </div>
-              <div className="space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleFillTestCredentials('kavitha.s@tcs.com', 'Admin@12345')}
-                  className="flex w-full items-center justify-between rounded-xl border border-stone-200 p-2 text-left text-xs hover:border-indigo-400 hover:bg-stone-50 dark:border-slate-800 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>Kavitha Sundaram</span>
-                      <span className="text-[9px] bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 px-1.5 py-0.2 rounded font-bold">Admin</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-mono">kavitha.s@tcs.com · Admin@12345</div>
-                  </div>
-                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">Fill</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleFillTestCredentials('dinesh.k@tcs.com', 'Buddy@12345')}
-                  className="flex w-full items-center justify-between rounded-xl border border-stone-200 p-2 text-left text-xs hover:border-emerald-400 hover:bg-stone-50 dark:border-slate-800 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>Dinesh Kumar</span>
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.2 rounded font-bold">Approved</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-mono">dinesh.k@tcs.com · Buddy@12345</div>
-                  </div>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">Fill</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleFillTestCredentials('priya.raman@tcs.com', 'Priya@12345')}
-                  className="flex w-full items-center justify-between rounded-xl border border-stone-200 p-2 text-left text-xs hover:border-amber-400 hover:bg-stone-50 dark:border-slate-800 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>Priya Raman</span>
-                      <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.2 rounded font-bold">Pending Review</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-mono">priya.raman@tcs.com · Priya@12345</div>
-                  </div>
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">Fill</span>
-                </button>
-              </div>
+            <div className="text-center text-xs text-slate-500 pt-2">
+              Don't have an account?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                className="font-bold text-orange-600 hover:underline"
+              >
+                Create one now
+              </button>
             </div>
           </div>
-        ) : (
-          /* Sign Up Form with Password & Confirm Password */
+        )}
+
+        {/* MODE 2: Sign Up (Create Account) */}
+        {mode === 'signup' && (
           <form onSubmit={handleSignUp} className="p-6 space-y-3.5 max-h-[75vh] overflow-y-auto">
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Register for Campus Break Network
+                Register on MidDay Buddy
               </h2>
               <p className="text-xs text-slate-500">
-                Create a corporate account. New accounts are reviewed by campus admin.
+                New accounts are placed in waiting approval by admin.
               </p>
             </div>
 
@@ -317,14 +322,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Corporate Email *
+                  Email ID *
                 </label>
                 <input
                   type="email"
                   required
-                  placeholder="name@tcs.com"
+                  placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  TCS Employee ID *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 1928472"
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white uppercase font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Designation / Role
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Software Engineer"
+                  value={roleTitle}
+                  onChange={(e) => setRoleTitle(e.target.value)}
                   className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                 />
               </div>
@@ -360,19 +394,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Designation / Project Role
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Systems Engineer · Cloud Native"
-                value={roleTitle}
-                onChange={(e) => setRoleTitle(e.target.value)}
-                className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-              />
             </div>
 
             <div>
@@ -439,21 +460,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Icebreaker Topic
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Ask me about the best biryani spots in Chennai!"
-                value={icebreaker}
-                onChange={(e) => setIcebreaker(e.target.value)}
-                className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-
-            <div className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 border border-amber-200 dark:border-amber-900">
-              🛡️ <strong>Safety Policy:</strong> Your account will be reviewed by the campus administrator to prevent impersonation and verify workplace membership.
+            <div className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 border border-amber-200 dark:border-amber-900 flex items-center gap-2">
+              <Shield className="h-4 w-4 shrink-0 text-amber-600" />
+              <span><strong>Note:</strong> Registration submitted will be <strong>waiting approval by admin</strong> before full access is activated.</span>
             </div>
 
             <button
@@ -461,9 +470,85 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               disabled={isLoading}
               className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 py-2.5 text-xs font-bold text-white shadow-md shadow-orange-500/20 hover:from-amber-600 hover:to-orange-700 active:scale-[0.98] transition-all disabled:opacity-50"
             >
-              {isLoading ? 'Creating Account...' : 'Register for Admin Approval'}
+              {isLoading ? 'Creating Account...' : 'Register Account'}
             </button>
           </form>
+        )}
+
+        {/* MODE 3: Forgot Password Request */}
+        {mode === 'forgot' && (
+          <div className="p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Forgot Password Request
+              </h2>
+              <p className="text-xs text-slate-500">
+                Raise a password reset request. Once approved by admin, you can log in without password to set your new password.
+              </p>
+            </div>
+
+            <form onSubmit={handleForgotPassword} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Registered Email ID *
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-3 text-xs text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  TCS Employee ID *
+                </label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 1928472"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-3 text-xs text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-white uppercase font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-stone-50 p-3 text-[11px] text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 border border-stone-200 dark:border-slate-800">
+                ℹ️ <strong>Admin Approval Workflow:</strong> Your request will be queued for administrator verification. Once the admin approves, you can sign in with your Email ID to set a fresh password immediately.
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 py-2.5 text-xs font-bold text-white shadow-md shadow-orange-500/20 hover:from-amber-600 hover:to-orange-700 active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                {isLoading ? 'Submitting Request...' : 'Raise Password Reset Request'}
+              </button>
+            </form>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                className="text-xs font-bold text-orange-600 hover:underline"
+              >
+                ← Back to Sign In
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

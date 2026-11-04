@@ -13,9 +13,10 @@ import {
   Building2,
   Users,
   Clock,
-  Sparkles
+  Sparkles,
+  KeyRound
 } from 'lucide-react';
-import { UserProfile, Community, CampusLocation, AuditLog } from '../types';
+import { UserProfile, Community, CampusLocation, AuditLog, PasswordResetRequest } from '../types';
 
 interface AdminDashboardProps {
   community: Community;
@@ -27,6 +28,8 @@ interface AdminDashboardProps {
   onAddLocation: (name: string, zone: string, description: string) => void;
   auditLogs: AuditLog[];
   onSwitchToApprovedUser: () => void;
+  resetRequests?: PasswordResetRequest[];
+  onApproveResetRequest?: (requestId: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -39,8 +42,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddLocation,
   auditLogs,
   onSwitchToApprovedUser,
+  resetRequests = [],
+  onApproveResetRequest,
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'pending' | 'members' | 'locations' | 'audit'>('pending');
+  const [activeTab, setActiveTab] = React.useState<'pending' | 'reset_requests' | 'members' | 'locations' | 'audit'>('pending');
   const [searchQuery, setSearchQuery] = React.useState('');
   
   // Location form state
@@ -50,10 +55,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newLocDesc, setNewLocDesc] = React.useState('');
 
   const pendingUsers = allUsers.filter((u) => u.status === 'pending_approval');
+  const pendingResets = resetRequests.filter((r) => r.status === 'pending');
   const filteredMembers = allUsers.filter(
     (u) =>
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.employeeId && u.employeeId.toLowerCase().includes(searchQuery.toLowerCase())) ||
       u.roleTitle.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -99,7 +106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Metric Cards Strip */}
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <div className="rounded-2xl bg-amber-50/70 p-4 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/50">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-amber-900 dark:text-amber-300">Pending Approvals</span>
@@ -107,6 +114,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div className="mt-2 text-3xl font-extrabold text-amber-700 dark:text-amber-400 font-mono-numbers">
               {pendingUsers.length}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-orange-50/70 p-4 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-900/50">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-orange-900 dark:text-orange-300">Password Resets</span>
+              <KeyRound className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-orange-700 dark:text-orange-400 font-mono-numbers">
+              {pendingResets.length}
             </div>
           </div>
 
@@ -143,17 +160,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Admin Tab Navigation */}
-      <div className="flex items-center gap-2 border-b border-stone-200 dark:border-slate-800 pb-3">
+      <div className="flex items-center gap-2 border-b border-stone-200 dark:border-slate-800 pb-3 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('pending')}
-          className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
+          className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
             activeTab === 'pending'
               ? 'bg-amber-500 text-white shadow-xs'
               : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
           }`}
         >
           <Clock className="h-4 w-4" />
-          <span>Pending Approvals Queue</span>
+          <span>Pending Approvals</span>
           {pendingUsers.length > 0 && (
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
               activeTab === 'pending' ? 'bg-white text-amber-700' : 'bg-rose-500 text-white'
@@ -164,8 +181,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('reset_requests')}
+          className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+            activeTab === 'reset_requests'
+              ? 'bg-orange-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+          }`}
+        >
+          <KeyRound className="h-4 w-4" />
+          <span>Password Resets</span>
+          {pendingResets.length > 0 && (
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              activeTab === 'reset_requests' ? 'bg-white text-orange-700' : 'bg-rose-500 text-white'
+            }`}>
+              {pendingResets.length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('members')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
             activeTab === 'members'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
@@ -177,7 +213,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('locations')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
             activeTab === 'locations'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
@@ -189,7 +225,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('audit')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
             activeTab === 'audit'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
@@ -251,8 +287,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                     <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
                       <div className="flex justify-between">
-                        <span className="text-slate-400">Corporate Email:</span>
+                        <span className="text-slate-400">Email ID:</span>
                         <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{applicant.email}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">TCS Employee ID:</span>
+                        <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400">{applicant.employeeId || 'N/A'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Target Campus:</span>
@@ -296,6 +336,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* Tab: Password Reset Requests Queue */}
+      {activeTab === 'reset_requests' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Password Reset Requests ({pendingResets.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                User raised request. Once admin approves, user can log in without password and is prompted for an immediate password change.
+              </p>
+            </div>
+          </div>
+
+          {pendingResets.length === 0 ? (
+            <div className="rounded-3xl border border-stone-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">No Pending Reset Requests</h3>
+              <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                All password reset requests have been reviewed. When a user submits a forgot-password request, it will appear here immediately for review.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {pendingResets.map((reqItem) => (
+                <div
+                  key={reqItem.id}
+                  className="flex flex-col justify-between rounded-3xl border border-stone-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-600 text-base font-bold text-white shadow-xs">
+                          {reqItem.userName ? reqItem.userName.charAt(0) : 'U'}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                            {reqItem.userName}
+                          </h3>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            TCS Employee ID: <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{reqItem.employeeId}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        Waiting approval by admin
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Email ID:</span>
+                        <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{reqItem.email}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">TCS Employee ID:</span>
+                        <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">{reqItem.employeeId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Requested At:</span>
+                        <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                          {new Date(reqItem.requestedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-orange-50/80 p-3 text-[11px] text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border border-orange-200/60 dark:border-orange-900/40">
+                      ℹ️ Approving will allow <strong>{reqItem.userName}</strong> to sign in once without their old password and immediately sets up a new password.
+                    </div>
+                  </div>
+
+                  {/* Action Button */}
+                  <div className="mt-6 pt-3 border-t border-stone-100 dark:border-slate-800">
+                    <button
+                      onClick={() => onApproveResetRequest && onApproveResetRequest(reqItem.id)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 py-2.5 text-xs font-semibold text-white hover:from-orange-700 hover:to-amber-700 shadow-sm transition-all"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      <span>Approve Password Reset</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tab 2: Member Directory & Moderation */}
       {activeTab === 'members' && (
         <div className="space-y-4">
@@ -321,7 +451,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <thead className="bg-stone-50 border-b border-stone-200 dark:bg-slate-800/60 dark:border-slate-800 text-slate-500">
                   <tr>
                     <th className="py-3 px-4 font-semibold">Colleague</th>
-                    <th className="py-3 px-4 font-semibold">Corporate Email</th>
+                    <th className="py-3 px-4 font-semibold">Email ID</th>
                     <th className="py-3 px-4 font-semibold">Status</th>
                     <th className="py-3 px-4 font-semibold">Role</th>
                     <th className="py-3 px-4 font-semibold text-right">Moderation Action</th>
@@ -337,7 +467,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                           <div>
                             <div className="font-semibold text-slate-900 dark:text-white">{member.name}</div>
-                            <div className="text-[11px] text-slate-500">{member.roleTitle}</div>
+                            <div className="text-[11px] text-slate-500">
+                              {member.roleTitle} {member.employeeId ? `· TCS ID: ${member.employeeId}` : ''}
+                            </div>
                           </div>
                         </div>
                       </td>

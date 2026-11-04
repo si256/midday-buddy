@@ -28,28 +28,15 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 app.use(express.json());
 
-// In-Memory Server Authoritative State (Database Layer)
+// In-Memory Server Authoritative State (Clean Production Database Layer)
 let dbUsers: UserProfile[] = [...INITIAL_USERS];
 let dbCommunities: Community[] = [...INITIAL_COMMUNITIES];
-let dbBreaks: BreakPost[] = INITIAL_BREAK_POSTS.map((b) => ({
-  ...b,
-  durationMinutes: b.breakType === 'tea' ? 15 : b.breakType === 'lunch' ? 30 : 20,
-}));
-let dbAuditLogs: AuditLog[] = [...INITIAL_AUDIT_LOGS];
+let dbBreaks: BreakPost[] = [];
+let dbAuditLogs: AuditLog[] = [];
 let dbMessages: Record<string, ChatMessage[]> = {};
 let dbSessions: Record<string, string> = {}; // token -> userId
-
-let dbNotifications: AppNotification[] = [
-  {
-    id: 'notif_welcome',
-    userId: 'usr_dinesh',
-    title: 'Welcome to Siruseri Break Network!',
-    body: 'Your account was verified by Campus Culture Lead Kavitha Sundaram.',
-    type: 'approval',
-    isRead: false,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
+let dbResetRequests: any[] = [];
+let dbNotifications: AppNotification[] = [];
 
 // ==========================================
 // 1. HEALTH CHECK & STATUS
@@ -57,13 +44,14 @@ let dbNotifications: AppNotification[] = [
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'online',
-    message: 'MidDay Buddy Authoritative Backend Server Active',
+    message: 'MidDay Buddy Authoritative Backend Server Active (CoreReacher Enterprises)',
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: Date.now(),
     stats: {
       usersCount: dbUsers.length,
       activeBreaksCount: dbBreaks.filter((b) => b.expiresAt > Date.now()).length,
       communitiesCount: dbCommunities.length,
+      pendingResetRequests: dbResetRequests.filter((r) => r.status === 'pending').length,
     },
   });
 });
@@ -73,34 +61,61 @@ app.get('/api/health', (req: Request, res: Response) => {
 // ==========================================
 app.post('/api/auth/login', (req: Request, res: Response) => {
   const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Corporate email and password are required.' });
+  if (!email) {
+    return res.status(400).json({ error: 'Email ID is required.' });
   }
 
   const trimmedEmail = email.trim().toLowerCase();
   const user = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
 
   if (!user) {
-    return res.status(401).json({ error: 'Invalid corporate email or password.' });
+    return res.status(401).json({ error: 'Invalid Email ID or password.' });
   }
 
-  // Real password validation check
+  // Check if admin approved a password reset for this user:
+  // Once admin approved, user can login without password & is prompted for immediate password change!
+  if (user.passwordResetApproved) {
+    const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    dbSessions[token] = user.id;
+
+    // Consume the one-time approved flag so it cannot be reused
+    user.passwordResetApproved = false;
+    user.mustChangePassword = true;
+
+    const { password: _, ...safeUser } = user;
+    return res.json({
+      token,
+      user: safeUser,
+      mustChangePassword: true,
+      message: 'Password reset was approved by admin. Please choose a new password now.',
+    });
+  }
+
+  // Standard password verification
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required.' });
+  }
+
   if (user.password && user.password !== password) {
-    return res.status(401).json({ error: 'Invalid corporate email or password.' });
+    return res.status(401).json({ error: 'Invalid Email ID or password.' });
   }
 
   const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   dbSessions[token] = user.id;
 
   const { password: _, ...safeUser } = user;
-  res.json({ token, user: safeUser });
+  res.json({ 
+    token, 
+    user: safeUser,
+    mustChangePassword: Boolean(user.mustChangePassword) 
+  });
 });
 
 app.post('/api/auth/register', (req: Request, res: Response) => {
-  const { name, email, password, campusId, roleTitle, interests, dietary, icebreaker } = req.body;
+  const { name, email, password, employeeId, campusId, roleTitle, interests, dietary, icebreaker } = req.body;
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, corporate email, and password are required.' });
+  if (!name || !email || !password || !employeeId) {
+    return res.status(400).json({ error: 'Name, Email ID, TCS Employee ID, and password are required.' });
   }
 
   if (password.length < 6) {
@@ -110,7 +125,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
   const trimmedEmail = email.trim().toLowerCase();
   const existing = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
   if (existing) {
-    return res.status(409).json({ error: 'An account with this corporate email already exists.' });
+    return res.status(409).json({ error: 'An account with this Email ID already exists.' });
   }
 
   const newUser: UserProfile = {
@@ -118,6 +133,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     name: name.trim(),
     email: trimmedEmail,
     password: password,
+    employeeId: employeeId.trim().toUpperCase(),
     campusId: campusId || 'comm_siruseri',
     roleTitle: roleTitle || 'Software Engineer',
     bio: '',
@@ -141,8 +157,8 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
   const adminNotif: AppNotification = {
     id: `notif_approval_${Date.now()}`,
     userId: 'admin',
-    title: 'New Member Approval Required',
-    body: `${newUser.name} (${newUser.email}) registered and needs admin verification.`,
+    title: 'New Member Waiting Approval',
+    body: `${newUser.name} (TCS ID: ${newUser.employeeId}, ${newUser.email}) registered. Waiting approval by admin.`,
     type: 'approval',
     isRead: false,
     createdAt: new Date().toISOString(),
@@ -152,6 +168,151 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
 
   const { password: _, ...safeUser } = newUser;
   res.status(201).json({ token, user: safeUser });
+});
+
+// Forgot Password: User raises reset request
+app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+  const { email, employeeId } = req.body;
+  if (!email || !employeeId) {
+    return res.status(400).json({ error: 'Email ID and TCS Employee ID are required.' });
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedEmpId = employeeId.trim().toUpperCase();
+
+  const user = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
+  if (!user) {
+    return res.status(404).json({ error: 'No account registered with this Email ID.' });
+  }
+
+  if (user.employeeId && user.employeeId.toUpperCase() !== trimmedEmpId) {
+    return res.status(400).json({ error: 'TCS Employee ID does not match records for this Email ID.' });
+  }
+
+  user.passwordResetRequested = true;
+  user.passwordResetApproved = false;
+
+  const resetReq = {
+    id: `reset_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    userId: user.id,
+    userName: user.name,
+    email: user.email,
+    employeeId: trimmedEmpId,
+    status: 'pending',
+    requestedAt: new Date().toISOString(),
+  };
+  dbResetRequests.unshift(resetReq);
+
+  // Notify admins
+  dbNotifications.unshift({
+    id: `notif_reset_${Date.now()}`,
+    userId: 'admin',
+    title: 'Password Reset Request',
+    body: `${user.name} (TCS ID: ${trimmedEmpId}) requested password reset. Waiting approval by admin.`,
+    type: 'approval',
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    referenceId: resetReq.id,
+  });
+
+  res.json({
+    success: true,
+    message: 'Password reset request submitted. Waiting approval by admin.',
+    requestId: resetReq.id,
+  });
+});
+
+// Admin: Get all password reset requests
+app.get('/api/auth/reset-requests', (req: Request, res: Response) => {
+  res.json(dbResetRequests);
+});
+
+// Admin: Approve password reset request
+app.post('/api/auth/approve-reset/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { adminId, adminName } = req.body;
+
+  const resetReq = dbResetRequests.find((r) => r.id === id);
+  if (!resetReq) {
+    return res.status(404).json({ error: 'Reset request not found.' });
+  }
+
+  resetReq.status = 'approved';
+  resetReq.approvedAt = new Date().toISOString();
+  resetReq.adminId = adminId || 'admin';
+
+  const user = dbUsers.find((u) => u.id === resetReq.userId);
+  if (user) {
+    user.passwordResetRequested = false;
+    user.passwordResetApproved = true; // Allows passwordless one-time entry
+    user.mustChangePassword = true;    // Forces immediate password change
+  }
+
+  dbAuditLogs.unshift({
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'APPROVE_USER',
+    targetUserId: resetReq.userId,
+    targetUserName: resetReq.userName,
+    details: `Approved password reset for ${resetReq.userName} (TCS ID: ${resetReq.employeeId}). User can now log in without password to set new password.`,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({ 
+    success: true, 
+    message: 'Password reset approved by admin. User can now sign in without password to set new password.' 
+  });
+});
+
+// User: Set new password after admin approved reset
+app.post('/api/auth/set-new-password', (req: Request, res: Response) => {
+  const { userId, newPassword } = req.body;
+  if (!userId || !newPassword) {
+    return res.status(400).json({ error: 'User ID and new password are required.' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  const user = dbUsers.find((u) => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  user.password = newPassword;
+  user.passwordResetRequested = false;
+  user.passwordResetApproved = false;
+  user.mustChangePassword = false;
+
+  const reqItem = dbResetRequests.find((r) => r.userId === userId && r.status === 'approved');
+  if (reqItem) {
+    reqItem.status = 'completed';
+  }
+
+  // Force user to log in again: invalidate all sessions for this user!
+  for (const [t, uId] of Object.entries(dbSessions)) {
+    if (uId === userId) {
+      delete dbSessions[t];
+    }
+  }
+
+  dbAuditLogs.unshift({
+    id: `log_${Date.now()}`,
+    adminId: 'system',
+    adminName: 'Security System',
+    action: 'REINSTATE_USER',
+    targetUserId: user.id,
+    targetUserName: user.name,
+    details: `Password changed for ${user.name}. Session invalidated; user must log in again with new password.`,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    message: 'Password changed successfully! Please log in again with your new password.',
+  });
 });
 
 app.get('/api/auth/me', (req: Request, res: Response) => {

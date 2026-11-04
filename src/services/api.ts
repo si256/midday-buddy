@@ -77,6 +77,7 @@ export const ApiService = {
     campusId: string;
     roleTitle: string;
     communityId?: string;
+    employeeId?: string;
     interests?: string[];
     dietary?: any;
     icebreaker?: string;
@@ -89,6 +90,39 @@ export const ApiService = {
     const data = await handleResponse<AuthResponse>(res);
     this.setToken(data.token);
     return data;
+  },
+
+  async forgotPassword(email: string, employeeId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, employeeId }),
+    });
+    return handleResponse(res);
+  },
+
+  async getResetRequests(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/auth/reset-requests`);
+    return handleResponse<any[]>(res);
+  },
+
+  async approveResetRequest(requestId: string, admin: { id: string; name: string }): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/auth/approve-reset/${encodeURIComponent(requestId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
+    });
+    return handleResponse(res);
+  },
+
+  async setNewPassword(userId: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/auth/set-new-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, newPassword }),
+    });
+    this.setToken(null);
+    return handleResponse(res);
   },
 
   async getMe(): Promise<UserProfile> {

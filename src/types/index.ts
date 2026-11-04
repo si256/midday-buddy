@@ -17,6 +17,7 @@ export interface UserProfile {
   name: string;
   roleTitle: string; // e.g. "Software Engineer", "Systems Analyst"
   campusId: string;
+  employeeId?: string; // TCS Employee ID
   avatarSeed: string;
   avatarBgColor: string;
   bio: string;
@@ -29,6 +30,9 @@ export interface UserProfile {
   rejectionReason?: string;
   registeredAt: string;
   approvedAt?: string;
+  passwordResetRequested?: boolean;
+  passwordResetApproved?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface CampusLocation {
@@ -121,7 +125,7 @@ export interface AuditLog {
   id: string;
   adminId: string;
   adminName: string;
-  action: 'APPROVE_USER' | 'REJECT_USER' | 'SUSPEND_USER' | 'REINSTATE_USER' | 'ADD_LOCATION' | 'DELETE_LOCATION';
+  action: 'APPROVE_USER' | 'REJECT_USER' | 'SUSPEND_USER' | 'REINSTATE_USER' | 'ADD_LOCATION' | 'DELETE_LOCATION' | 'APPROVE_PASSWORD_RESET';
   targetUserId?: string;
   targetUserName?: string;
   details: string;
@@ -131,10 +135,19 @@ export interface AuditLog {
 export interface AuthResponse {
   token: string;
   user: UserProfile;
+  mustChangePassword?: boolean;
+  message?: string;
 }
 
-export interface LoginCredentials {
+export interface PasswordResetRequest {
+  id: string;
+  userId: string;
+  userName: string;
   email: string;
-  password?: string;
+  employeeId: string;
+  status: 'pending' | 'approved' | 'completed';
+  requestedAt: string;
+  approvedAt?: string;
+  adminId?: string;
 }
 

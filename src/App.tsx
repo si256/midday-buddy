@@ -23,7 +23,8 @@ import {
   BreakPost, 
   AuditLog, 
   BreakType,
-  AppNotification 
+  AppNotification,
+  PasswordResetRequest 
 } from './types';
 import { StorageService } from './services/storage';
 import { ApiService } from './services/api';
@@ -39,6 +40,7 @@ import { ProfileModal } from './components/ProfileModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ZeroCostArchitectureModal } from './components/ZeroCostArchitectureModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 
 export default function App() {
   // Theme state
@@ -61,6 +63,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = React.useState<UserProfile | null>(() => StorageService.getCurrentSessionUser());
   const [breakPosts, setBreakPosts] = React.useState<BreakPost[]>(() => StorageService.getBreaks());
   const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>(() => StorageService.getAuditLogs());
+  const [resetRequests, setResetRequests] = React.useState<PasswordResetRequest[]>([]);
   const [notifications, setNotifications] = React.useState<AppNotification[]>(() => {
     const user = StorageService.getCurrentSessionUser();
     return user ? StorageService.getNotifications(user.id) : [];
@@ -101,11 +104,12 @@ export default function App() {
   // Load & periodically sync with Real Authoritative Backend API
   const syncWithBackend = React.useCallback(async () => {
     try {
-      const [comms, users, breaks, logs] = await Promise.all([
+      const [comms, users, breaks, logs, resets] = await Promise.all([
         ApiService.getCommunities(),
         ApiService.getUsers(),
         ApiService.getBreaks(),
         ApiService.getAuditLogs(),
+        ApiService.getResetRequests().catch(() => []),
       ]);
       setCommunities(comms);
       if (comms.length > 0) {
@@ -114,6 +118,7 @@ export default function App() {
       setAllUsers(users);
       setBreakPosts(breaks);
       setAuditLogs(logs);
+      setResetRequests(resets || []);
 
       if (currentUser) {
         const notifs = await ApiService.getNotifications(currentUser.id);
@@ -226,6 +231,17 @@ export default function App() {
     }
   };
 
+  const handleApproveResetRequest = async (requestId: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const res = await ApiService.approveResetRequest(requestId, adminInfo);
+      showToast(res.message || 'Password reset approved! User can now sign in without password to set new password.');
+      await syncWithBackend();
+    } catch (err: any) {
+      showToast(`Approval failed: ${err.message}`);
+    }
+  };
+
   // Broadcast user's availability (Server API)
   const handleBroadcastBreak = async (data: {
     breakType: BreakType;
@@ -304,14 +320,14 @@ export default function App() {
       setAllUsers((prev) => [...prev, registered]);
       setCurrentUser(registered);
       setActiveView('board');
-      showToast(`Welcome ${registered.name}! Your account is queued for admin approval.`);
+      showToast(`Welcome ${registered.name}! Waiting approval by admin.`);
     } catch (err: any) {
       showToast(`Registration failed: ${err.message}`);
     }
   };
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#FAF9F6] text-slate-900 dark:bg-[#0B0F19] dark:text-slate-100 transition-colors">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#FAF9F6] text-slate-900 dark:bg-[#0B0F19] dark:text-slate-100 transition-colors">
       {/* 3-Zone Top Navigation */}
       <Navbar
         communities={communities}
@@ -355,7 +371,7 @@ export default function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="pb-24 md:pb-16 max-w-full overflow-x-hidden">
+      <main className="flex-1 pb-24 md:pb-16 max-w-full overflow-x-hidden">
         {/* VIEW 1: Campus Admin Portal */}
         {activeView === 'admin' ? (
           currentUser?.role === 'community_admin' ? (
@@ -368,6 +384,8 @@ export default function App() {
               locations={activeCommunity.locations}
               onAddLocation={handleAddLocation}
               auditLogs={auditLogs}
+              resetRequests={resetRequests}
+              onApproveResetRequest={handleApproveResetRequest}
               onSwitchToApprovedUser={() => {
                 const approvedUser = allUsers.find((u) => u.status === 'approved' && u.role === 'user') || allUsers[0];
                 setCurrentUser(approvedUser);
@@ -688,6 +706,36 @@ export default function App() {
         isOpen={isZeroCostOpen}
         onClose={() => setIsZeroCostOpen(false)}
       />
+
+      {/* 7. Mandatory Force Password Change Modal (After Admin Approved Reset) */}
+      {currentUser && currentUser.mustChangePassword && (
+        <ForcePasswordChangeModal
+          isOpen={true}
+          userId={currentUser.id}
+          userName={currentUser.name}
+          onPasswordChanged={async (msg) => {
+            await ApiService.logout();
+            setCurrentUser(null);
+            showToast(msg);
+            setIsAuthOpen(true);
+          }}
+        />
+      )}
+
+      {/* Footer Branded for CoreReacher Enterprises */}
+      <footer className="w-full border-t border-stone-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md py-6 px-4 text-center mt-auto z-10">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-2 font-medium">
+            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-amber-500 to-orange-600 text-white text-[10px] font-bold">MB</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              MidDay Buddy backed by CoreReacher Enterprises
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-400">
+            Workplace Break Coordinator · Verified Employee Network
+          </div>
+        </div>
+      </footer>
 
       {/* Mobile Ergonomic Bottom Navigation Bar */}
       <MobileBottomNav
