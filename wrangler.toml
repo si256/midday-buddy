@@ -2,10 +2,7 @@ name = "midday-buddy-test"
 compatibility_date = "2024-04-01"
 pages_build_output_dir = "dist"
 
-[assets]
-directory = "./dist"
-
-# To bind D1, uncomment and insert your D1 database ID from Cloudflare:
+# Optional: Cloudflare Pages D1 binding
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "midday-buddy-staging"
