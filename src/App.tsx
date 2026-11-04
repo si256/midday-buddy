@@ -26,6 +26,7 @@ import {
   AppNotification 
 } from './types';
 import { StorageService } from './services/storage';
+import { ApiService } from './services/api';
 import { Navbar } from './components/Navbar';
 import { BreakCard } from './components/BreakCard';
 import { InterestModal } from './components/InterestModal';
@@ -97,11 +98,49 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Load & periodically sync with Real Authoritative Backend API
+  const syncWithBackend = React.useCallback(async () => {
+    try {
+      const [comms, users, breaks, logs] = await Promise.all([
+        ApiService.getCommunities(),
+        ApiService.getUsers(),
+        ApiService.getBreaks(),
+        ApiService.getAuditLogs(),
+      ]);
+      setCommunities(comms);
+      if (comms.length > 0) {
+        setActiveCommunity((prev) => comms.find((c) => c.id === prev.id) || comms[0]);
+      }
+      setAllUsers(users);
+      setBreakPosts(breaks);
+      setAuditLogs(logs);
+
+      if (currentUser) {
+        const notifs = await ApiService.getNotifications(currentUser.id);
+        setNotifications(notifs);
+        const fresh = users.find((u) => u.id === currentUser.id);
+        if (fresh && fresh.status !== currentUser.status) {
+          setCurrentUser(fresh);
+        }
+      }
+    } catch (err) {
+      // Backend sync fallback if network blip
+    }
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    syncWithBackend();
+    const interval = setInterval(syncWithBackend, 4000);
+    return () => clearInterval(interval);
+  }, [syncWithBackend]);
+
   // Sync session & notifications when currentUser changes
   React.useEffect(() => {
     if (currentUser) {
       StorageService.setCurrentSessionUser(currentUser);
-      setNotifications(StorageService.getNotifications(currentUser.id));
+      ApiService.getNotifications(currentUser.id)
+        .then(setNotifications)
+        .catch(() => setNotifications(StorageService.getNotifications(currentUser.id)));
     } else {
       StorageService.setCurrentSessionUser(null);
       setNotifications([]);
@@ -125,150 +164,70 @@ export default function App() {
     ? breakPosts.find((p) => p.userId === currentUser.id && p.expiresAt > now)
     : null;
 
-  // Admin Actions
-  const handleApproveUser = (userId: string) => {
-    const target = allUsers.find((u) => u.id === userId);
-    if (!target) return;
-
-    const updatedUser: UserProfile = {
-      ...target,
-      status: 'approved',
-      approvedAt: new Date().toISOString(),
-    };
-
-    const newUsers = allUsers.map((u) => (u.id === userId ? updatedUser : u));
-    setAllUsers(newUsers);
-    StorageService.saveUsers(newUsers);
-
-    // If approved user is the currently logged-in user, update session
-    if (currentUser?.id === userId) {
-      setCurrentUser(updatedUser);
+  // Real Admin Actions (Backed by Server API)
+  const handleApproveUser = async (userId: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { user: updatedUser, log } = await ApiService.approveUser(userId, adminInfo);
+      setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+      setAuditLogs((prev) => [log, ...prev]);
+      if (currentUser?.id === userId) {
+        setCurrentUser(updatedUser);
+      }
+      showToast(`✅ Approved ${updatedUser.name}! Profile is now verified.`);
+    } catch (err: any) {
+      showToast(`Approval failed: ${err.message}`);
     }
-
-    // Add notification for the user
-    const approvalNotif: AppNotification = {
-      id: `notif_${Date.now()}`,
-      userId: target.id,
-      title: '🎉 Campus Registration Approved!',
-      body: `Campus Admin ${currentUser?.name || 'Moderator'} has verified and approved your account for ${activeCommunity.name}.`,
-      type: 'approval',
-      isRead: false,
-      createdAt: new Date().toISOString(),
-    };
-    StorageService.addNotification(approvalNotif);
-
-    // Add Audit Log
-    const newLog: AuditLog = {
-      id: `log_${Date.now()}`,
-      adminId: currentUser?.id || 'admin',
-      adminName: currentUser?.name || 'Campus Admin',
-      action: 'APPROVE_USER',
-      targetUserId: target.id,
-      targetUserName: target.name,
-      details: `Manually approved ${target.name} (${target.email}) for ${activeCommunity.name}.`,
-      timestamp: new Date().toISOString(),
-    };
-    StorageService.addAuditLog(newLog);
-    setAuditLogs(StorageService.getAuditLogs());
-
-    showToast(`✅ Approved ${target.name}! Their profile is now active on campus.`);
   };
 
-  const handleRejectUser = (userId: string, reason: string) => {
-    const target = allUsers.find((u) => u.id === userId);
-    if (!target) return;
-
-    const updatedUser: UserProfile = {
-      ...target,
-      status: 'rejected',
-      rejectionReason: reason,
-    };
-
-    const newUsers = allUsers.map((u) => (u.id === userId ? updatedUser : u));
-    setAllUsers(newUsers);
-    StorageService.saveUsers(newUsers);
-
-    if (currentUser?.id === userId) {
-      setCurrentUser(updatedUser);
+  const handleRejectUser = async (userId: string, reason: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { log } = await ApiService.rejectUser(userId, adminInfo, reason);
+      setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+      setAuditLogs((prev) => [log, ...prev]);
+      showToast(`Rejected registration.`);
+    } catch (err: any) {
+      showToast(`Reject failed: ${err.message}`);
     }
-
-    const newLog: AuditLog = {
-      id: `log_${Date.now()}`,
-      adminId: currentUser?.id || 'admin',
-      adminName: currentUser?.name || 'Campus Admin',
-      action: 'REJECT_USER',
-      targetUserId: target.id,
-      targetUserName: target.name,
-      details: `Rejected registration for ${target.name}: ${reason}`,
-      timestamp: new Date().toISOString(),
-    };
-    StorageService.addAuditLog(newLog);
-    setAuditLogs(StorageService.getAuditLogs());
-
-    showToast(`Rejected registration for ${target.name}.`);
   };
 
-  const handleToggleUserStatus = (userId: string, newStatus: 'approved' | 'suspended') => {
-    const target = allUsers.find((u) => u.id === userId);
-    if (!target) return;
-
-    const updatedUser: UserProfile = { ...target, status: newStatus };
-    const newUsers = allUsers.map((u) => (u.id === userId ? updatedUser : u));
-    setAllUsers(newUsers);
-    StorageService.saveUsers(newUsers);
-
-    if (currentUser?.id === userId) {
-      setCurrentUser(updatedUser);
+  const handleToggleUserStatus = async (userId: string, newStatus: 'approved' | 'suspended') => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { user: updatedUser, log } = await ApiService.toggleUserStatus(userId, adminInfo);
+      setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+      setAuditLogs((prev) => [log, ...prev]);
+      if (currentUser?.id === userId) {
+        setCurrentUser(updatedUser);
+      }
+      showToast(`Updated status for ${updatedUser.name} to ${newStatus}.`);
+    } catch (err: any) {
+      showToast(`Status update failed: ${err.message}`);
     }
-
-    const newLog: AuditLog = {
-      id: `log_${Date.now()}`,
-      adminId: currentUser?.id || 'admin',
-      adminName: currentUser?.name || 'Campus Admin',
-      action: newStatus === 'suspended' ? 'SUSPEND_USER' : 'REINSTATE_USER',
-      targetUserId: target.id,
-      targetUserName: target.name,
-      details: `${newStatus === 'suspended' ? 'Suspended' : 'Reinstated'} access for ${target.name}.`,
-      timestamp: new Date().toISOString(),
-    };
-    StorageService.addAuditLog(newLog);
-    setAuditLogs(StorageService.getAuditLogs());
-
-    showToast(`Updated status for ${target.name} to ${newStatus}.`);
   };
 
-  const handleAddLocation = (name: string, zone: string, description: string) => {
-    const newLoc: CampusLocation = {
-      id: `loc_${Date.now()}`,
-      communityId: activeCommunity.id,
-      name,
-      zone,
-      description,
-      isPopular: false,
-    };
-
-    StorageService.addLocationToCommunity(activeCommunity.id, newLoc);
-    const updatedComms = StorageService.getCommunities();
-    setCommunities(updatedComms);
-    const updatedActive = updatedComms.find((c) => c.id === activeCommunity.id) || updatedComms[0];
-    setActiveCommunity(updatedActive);
-
-    const newLog: AuditLog = {
-      id: `log_${Date.now()}`,
-      adminId: currentUser?.id || 'admin',
-      adminName: currentUser?.name || 'Campus Admin',
-      action: 'ADD_LOCATION',
-      details: `Added new campus landmark "${name}" in ${zone}.`,
-      timestamp: new Date().toISOString(),
-    };
-    StorageService.addAuditLog(newLog);
-    setAuditLogs(StorageService.getAuditLogs());
-
-    showToast(`Added new campus spot "${name}"!`);
+  const handleAddLocation = async (name: string, zone: string, description: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const newLoc: CampusLocation = {
+        id: `loc_${Date.now()}`,
+        communityId: activeCommunity.id,
+        name,
+        zone,
+        description,
+        isPopular: false,
+      };
+      await ApiService.addLocation(activeCommunity.id, newLoc, adminInfo);
+      await syncWithBackend();
+      showToast(`Added new campus spot "${name}"!`);
+    } catch (err: any) {
+      showToast(`Add location failed: ${err.message}`);
+    }
   };
 
-  // Broadcast user's availability
-  const handleBroadcastBreak = (data: {
+  // Broadcast user's availability (Server API)
+  const handleBroadcastBreak = async (data: {
     breakType: BreakType;
     durationMinutes: number;
     locationName: string;
@@ -276,74 +235,79 @@ export default function App() {
     customNote: string;
   }) => {
     if (!currentUser) return;
-
-    const newPost: BreakPost = {
-      id: `post_${Date.now()}`,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.roleTitle,
-      userAvatarSeed: currentUser.avatarSeed,
-      userAvatarBg: currentUser.avatarBgColor,
-      communityId: activeCommunity.id,
-      breakType: data.breakType,
-      status: 'free_now',
-      timeLabel: `Free Right Now (${data.durationMinutes}m)`,
-      durationMinutes: data.durationMinutes,
-      locationName: data.locationName,
-      zone: data.zone,
-      customNote: data.customNote,
-      dietary: currentUser.dietary,
-      interests: currentUser.interests,
-      icebreaker: currentUser.icebreaker,
-      expiresAt: Date.now() + data.durationMinutes * 60 * 1000,
-      createdAt: Date.now(),
-    };
-
-    StorageService.addBreak(newPost);
-    setBreakPosts(StorageService.getBreaks());
-    showToast(`⚡ Your ${data.breakType.toUpperCase()} break is live on the campus board!`);
+    try {
+      const newPost = await ApiService.broadcastBreak({
+        userId: currentUser.id,
+        communityId: activeCommunity.id,
+        breakType: data.breakType,
+        durationMinutes: data.durationMinutes,
+        locationName: data.locationName,
+        zone: data.zone,
+        customNote: data.customNote,
+      });
+      setBreakPosts((prev) => [newPost, ...prev]);
+      showToast(`⚡ Your ${data.breakType.toUpperCase()} break is live on the campus board!`);
+    } catch (err: any) {
+      showToast(`Broadcast failed: ${err.message}`);
+    }
   };
 
-  // Extend active break by 10 minutes
-  const handleExtendMyBreak = () => {
+  // Extend active break by 10 minutes (Server API)
+  const handleExtendMyBreak = async () => {
     if (!myActiveBreak) return;
-    const updated = breakPosts.map((p) =>
-      p.id === myActiveBreak.id
-        ? { ...p, expiresAt: p.expiresAt + 10 * 60 * 1000, durationMinutes: p.durationMinutes + 10 }
-        : p
-    );
-    StorageService.saveBreaks(updated);
-    setBreakPosts(updated);
-    showToast('Extended your break by 10 minutes!');
+    try {
+      const res = await ApiService.extendBreak(myActiveBreak.id);
+      setBreakPosts((prev) => prev.map((p) => (p.id === myActiveBreak.id ? res.post : p)));
+      showToast('Extended your break by 10 minutes!');
+    } catch (err: any) {
+      showToast(`Extend failed: ${err.message}`);
+    }
   };
 
-  // Finish active break
-  const handleFinishMyBreak = () => {
+  // Finish active break (Server API)
+  const handleFinishMyBreak = async () => {
     if (!myActiveBreak) return;
-    const updated = breakPosts.map((p) =>
-      p.id === myActiveBreak.id ? { ...p, expiresAt: now - 1000, status: 'completed' as any } : p
-    );
-    StorageService.saveBreaks(updated);
-    setBreakPosts(updated);
-    showToast('Break marked as completed.');
+    try {
+      const res = await ApiService.completeBreak(myActiveBreak.id);
+      setBreakPosts((prev) => prev.map((p) => (p.id === myActiveBreak.id ? res.post : p)));
+      showToast('Break marked as completed.');
+    } catch (err: any) {
+      showToast(`Complete failed: ${err.message}`);
+    }
   };
 
-  // User Profile save
-  const handleSaveProfile = (updated: UserProfile) => {
-    StorageService.updateUser(updated);
-    setAllUsers(StorageService.getUsers());
-    setCurrentUser(updated);
-    showToast('Profile updated successfully!');
+  // User Profile save (Server API)
+  const handleSaveProfile = async (updated: UserProfile) => {
+    try {
+      const res = await ApiService.updateProfile(updated.id, updated);
+      setCurrentUser(res.user);
+      setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? res.user : u)));
+      showToast('Profile updated successfully!');
+    } catch (err: any) {
+      showToast(`Profile update failed: ${err.message}`);
+    }
   };
 
-  // New user registration
-  const handleRegisterNewUser = (newUser: UserProfile) => {
-    const updatedUsers = [...allUsers, newUser];
-    setAllUsers(updatedUsers);
-    StorageService.saveUsers(updatedUsers);
-    setCurrentUser(newUser); // switch to the newly registered user
-    setActiveView('board');
-    showToast(`Welcome ${newUser.name}! Your account is queued for admin approval.`);
+  // New user registration (Server API)
+  const handleRegisterNewUser = async (newUser: UserProfile) => {
+    try {
+      const registered = await ApiService.registerUser({
+        name: newUser.name,
+        email: newUser.email,
+        campusId: newUser.campusId,
+        roleTitle: newUser.roleTitle,
+        communityId: activeCommunity.id,
+        interests: newUser.interests,
+        dietary: newUser.dietary,
+        icebreaker: newUser.icebreaker,
+      });
+      setAllUsers((prev) => [...prev, registered]);
+      setCurrentUser(registered);
+      setActiveView('board');
+      showToast(`Welcome ${registered.name}! Your account is queued for admin approval.`);
+    } catch (err: any) {
+      showToast(`Registration failed: ${err.message}`);
+    }
   };
 
   return (
