@@ -437,13 +437,13 @@ export default function App() {
           <div className="mx-auto max-w-3xl px-4 py-16 text-center space-y-6">
             <div className="inline-flex items-center gap-2 rounded-2xl bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 dark:bg-amber-950/70 dark:text-amber-200">
               <Coffee className="h-4 w-4" />
-              <span>{activeCommunity.name} · Verified Workplace Network</span>
+              <span>Verified Workplace Campus Network</span>
             </div>
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Connect for Tea & Lunch Breaks at {activeCommunity.name}
+              Connect for Tea & Lunch Breaks Across Your Workplace Campus
             </h1>
             <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-              Never eat alone or step out in silence. Spontaneously find companions for chai, meals, and outdoor strolls across {activeCommunity.name} ({activeCommunity.city}).
+              Never eat alone or step out in silence. Spontaneously find verified colleagues for chai, meals, and outdoor strolls across your workplace campus.
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button

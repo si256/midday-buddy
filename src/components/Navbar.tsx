@@ -49,7 +49,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  const [showCommunityMenu, setShowCommunityMenu] = React.useState(false);
   const [showUserMenu, setShowUserMenu] = React.useState(false);
 
   const isAdmin = currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin';
@@ -57,8 +56,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-30 w-full border-b border-stone-200 bg-white/95 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 transition-colors">
       <div className="mx-auto flex h-14 sm:h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:px-6 lg:px-8">
-        {/* Zone 1: Brand Wordmark & Campus Hub Dropdown */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
+        {/* Zone 1: Brand Wordmark */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button 
             onClick={() => onChangeView('board')}
             className="flex items-center gap-2 text-left focus:outline-none group shrink-0"
@@ -71,69 +70,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           </button>
 
-          {/* Campus Hub Selector (Available on both Mobile and Desktop) */}
-          <div className="relative">
-            <button
-              onClick={() => setShowCommunityMenu(!showCommunityMenu)}
-              className="flex items-center gap-1 sm:gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 sm:px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700/80 transition-colors shadow-2xs"
-              aria-label="Select Campus Hub"
-              title="Click to switch campus hub"
-            >
-              <MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-orange-500 shrink-0" />
-              <span className="max-w-[75px] xs:max-w-[100px] sm:max-w-[140px] truncate">{activeCommunity.name}</span>
-              <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
-            </button>
-
-            {showCommunityMenu && (
-              <>
-                {/* Mobile backdrop */}
-                <div 
-                  className="fixed inset-0 z-40 bg-black/40 backdrop-blur-2xs md:hidden"
-                  onClick={() => setShowCommunityMenu(false)}
-                />
-                
-                {/* Dropdown Menu */}
-                <div 
-                  className="fixed top-14 inset-x-3 sm:absolute sm:inset-x-auto sm:left-0 sm:top-full mt-1 sm:w-72 rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in-50 zoom-in-95 duration-100"
-                  onMouseLeave={() => setShowCommunityMenu(false)}
-                >
-                  <div className="flex items-center justify-between px-2 py-1.5 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-stone-100 dark:border-slate-800 mb-1">
-                    <span>Campus Hubs</span>
-                    <span className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold">{communities.length} locations</span>
-                  </div>
-                  <div className="space-y-1 max-h-64 overflow-y-auto">
-                    {communities.map((comm) => (
-                      <button
-                        key={comm.id}
-                        onClick={() => {
-                          onSelectCommunity(comm);
-                          setShowCommunityMenu(false);
-                        }}
-                        className={`flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left text-xs transition-colors ${
-                          comm.id === activeCommunity.id
-                            ? 'bg-amber-50 text-amber-950 dark:bg-amber-950/60 dark:text-amber-200 font-bold border border-amber-200/60 dark:border-amber-900/40'
-                            : 'text-slate-700 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold flex items-center justify-between">
-                            <span className="truncate">{comm.name}</span>
-                            {comm.id === activeCommunity.id && (
-                              <span className="ml-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">Active</span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {comm.city} · {comm.locations.length} spots
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          {/* User's assigned workplace campus (shown only when authenticated) */}
+          {currentUser && activeCommunity && (
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-stone-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <MapPin className="h-3 w-3 text-orange-500" />
+              <span>{activeCommunity.name}</span>
+            </span>
+          )}
         </div>
 
         {/* Zone 2: Navigation Links (Hidden on mobile to prevent overflow) */}
@@ -286,9 +229,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <button
               onClick={onOpenAuth}
-              className="flex items-center gap-1 rounded-xl bg-orange-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 transition-colors shrink-0"
+              className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 sm:px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 active:scale-95 transition-all whitespace-nowrap shrink-0"
             >
-              <LogIn className="h-3.5 w-3.5" />
+              <LogIn className="h-4 w-4" />
               <span>Sign In</span>
             </button>
           )}
