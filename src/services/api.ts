@@ -11,10 +11,12 @@ import {
   ChatMessage, 
   AppNotification, 
   CampusLocation,
-  BreakType 
+  BreakType,
+  AuthResponse 
 } from '../types';
 
 const API_BASE = '/api';
+const TOKEN_KEY = 'mdb_auth_token_v1';
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -33,6 +35,81 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const ApiService = {
+  getToken(): string | null {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+
+  setToken(token: string | null): void {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  },
+
+  getHeaders(): HeadersInit {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  },
+
+  // --- AUTHENTICATION ---
+  async login(credentials: { email: string; password?: string }): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    });
+    const data = await handleResponse<AuthResponse>(res);
+    this.setToken(data.token);
+    return data;
+  },
+
+  async register(userData: {
+    name: string;
+    email: string;
+    password?: string;
+    campusId: string;
+    roleTitle: string;
+    communityId?: string;
+    interests?: string[];
+    dietary?: any;
+    icebreaker?: string;
+  }): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    });
+    const data = await handleResponse<AuthResponse>(res);
+    this.setToken(data.token);
+    return data;
+  },
+
+  async getMe(): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: this.getHeaders(),
+    });
+    const data = await handleResponse<{ user: UserProfile }>(res);
+    return data.user;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+      });
+    } finally {
+      this.setToken(null);
+    }
+  },
+
   // --- HEALTH ---
   async checkHealth(): Promise<{ status: string; uptimeSeconds: number; stats: any }> {
     const res = await fetch(`${API_BASE}/health`);

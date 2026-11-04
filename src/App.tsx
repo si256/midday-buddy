@@ -323,7 +323,8 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
-        onSignOut={() => {
+        onSignOut={async () => {
+          await ApiService.logout();
           setCurrentUser(null);
           showToast('Signed out of MidDay Buddy.');
         }}

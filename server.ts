@@ -37,6 +37,8 @@ let dbBreaks: BreakPost[] = INITIAL_BREAK_POSTS.map((b) => ({
 }));
 let dbAuditLogs: AuditLog[] = [...INITIAL_AUDIT_LOGS];
 let dbMessages: Record<string, ChatMessage[]> = {};
+let dbSessions: Record<string, string> = {}; // token -> userId
+
 let dbNotifications: AppNotification[] = [
   {
     id: 'notif_welcome',
@@ -64,6 +66,122 @@ app.get('/api/health', (req: Request, res: Response) => {
       communitiesCount: dbCommunities.length,
     },
   });
+});
+
+// ==========================================
+// AUTHENTICATION & PASSWORD MANAGEMENT
+// ==========================================
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Corporate email and password are required.' });
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  const user = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
+
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid corporate email or password.' });
+  }
+
+  // Real password validation check
+  if (user.password && user.password !== password) {
+    return res.status(401).json({ error: 'Invalid corporate email or password.' });
+  }
+
+  const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  dbSessions[token] = user.id;
+
+  const { password: _, ...safeUser } = user;
+  res.json({ token, user: safeUser });
+});
+
+app.post('/api/auth/register', (req: Request, res: Response) => {
+  const { name, email, password, campusId, roleTitle, interests, dietary, icebreaker } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, corporate email, and password are required.' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  const existing = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
+  if (existing) {
+    return res.status(409).json({ error: 'An account with this corporate email already exists.' });
+  }
+
+  const newUser: UserProfile = {
+    id: `usr_${Date.now()}`,
+    name: name.trim(),
+    email: trimmedEmail,
+    password: password,
+    campusId: campusId || 'comm_siruseri',
+    roleTitle: roleTitle || 'Software Engineer',
+    bio: '',
+    socialBattery: 'Balanced Banter',
+    status: 'pending_approval', // Server enforces manual admin approval
+    role: 'user',
+    interests: interests || ['Tech & AI', 'Coffee & Chai'],
+    dietary: (dietary as any) || 'Any',
+    icebreaker: icebreaker || 'Always happy to talk tech, movies, or sports!',
+    registeredAt: new Date().toISOString(),
+    avatarSeed: name.toLowerCase().replace(/\s+/g, '-'),
+    avatarBgColor: 'bg-indigo-600',
+  };
+
+  dbUsers.push(newUser);
+
+  const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  dbSessions[token] = newUser.id;
+
+  // Notify admins
+  const adminNotif: AppNotification = {
+    id: `notif_approval_${Date.now()}`,
+    userId: 'admin',
+    title: 'New Member Approval Required',
+    body: `${newUser.name} (${newUser.email}) registered and needs admin verification.`,
+    type: 'approval',
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    referenceId: newUser.id,
+  };
+  dbNotifications.unshift(adminNotif);
+
+  const { password: _, ...safeUser } = newUser;
+  res.status(201).json({ token, user: safeUser });
+});
+
+app.get('/api/auth/me', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: missing session token' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const userId = dbSessions[token];
+  if (!userId) {
+    return res.status(401).json({ error: 'Invalid or expired session token' });
+  }
+
+  const user = dbUsers.find((u) => u.id === userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const { password: _, ...safeUser } = user;
+  res.json({ user: safeUser });
+});
+
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    delete dbSessions[token];
+  }
+  res.json({ success: true });
 });
 
 // ==========================================

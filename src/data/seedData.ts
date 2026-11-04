@@ -120,6 +120,7 @@ export const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_admin',
     email: 'kavitha.s@tcs.com',
+    password: 'Admin@12345',
     name: 'Kavitha Sundaram',
     roleTitle: 'Campus Culture Lead',
     campusId: 'comm_siruseri',
@@ -138,6 +139,7 @@ export const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_dinesh',
     email: 'dinesh.k@tcs.com',
+    password: 'Buddy@12345',
     name: 'Dinesh Kumar',
     roleTitle: 'Systems Analyst · BFSI',
     campusId: 'comm_siruseri',
@@ -156,6 +158,7 @@ export const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_priya_pending',
     email: 'priya.raman@tcs.com',
+    password: 'Priya@12345',
     name: 'Priya Raman',
     roleTitle: 'Cloud Engineer · AWS/GCP',
     campusId: 'comm_siruseri',
@@ -173,6 +176,7 @@ export const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_amit_pending',
     email: 'amit.sharma@tcs.com',
+    password: 'Amit@12345',
     name: 'Amit Sharma',
     roleTitle: 'Quality Engineering Lead',
     campusId: 'comm_siruseri',

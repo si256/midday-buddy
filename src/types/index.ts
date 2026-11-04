@@ -127,3 +127,14 @@ export interface AuditLog {
   details: string;
   timestamp: string;
 }
+
+export interface AuthResponse {
+  token: string;
+  user: UserProfile;
+}
+
+export interface LoginCredentials {
+  email: string;
+  password?: string;
+}
+

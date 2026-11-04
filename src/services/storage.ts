@@ -98,12 +98,6 @@ export const StorageService = {
   getCurrentSessionUser(): UserProfile | null {
     const userId = localStorage.getItem(KEYS.SESSION);
     if (!userId) {
-      // Default to Dinesh Kumar (Approved) on first visit
-      const defaultUser = this.getUsers().find((u) => u.id === 'usr_dinesh') || this.getUsers()[0];
-      if (defaultUser) {
-        localStorage.setItem(KEYS.SESSION, defaultUser.id);
-        return defaultUser;
-      }
       return null;
     }
     return this.getUserById(userId) || null;
