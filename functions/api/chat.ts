@@ -1,5 +1,19 @@
 import type { AppEnv, PagesFunction } from '../env';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+};
+
+export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+  return new Response(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+};
+
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
   const url = new URL(request.url);
@@ -7,7 +21,7 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
   if (!env.DB) {
     return new Response(JSON.stringify([]), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: CORS_HEADERS,
     });
   }
 
@@ -17,12 +31,11 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
     ).bind(conversationId).all();
 
     return new Response(JSON.stringify(results || []), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: CORS_HEADERS,
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify([]), {
+      headers: CORS_HEADERS,
     });
   }
 };
@@ -32,29 +45,24 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const url = new URL(request.url);
   const conversationId = url.pathname.split('/').pop() || 'general';
 
-  if (!env.DB) {
-    return new Response(JSON.stringify({ error: 'DB not bound' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
   try {
-    const body: any = await request.json();
+    const body: any = await request.json().catch(() => ({}));
     const id = `msg_${Date.now()}`;
     const now = Date.now();
 
-    await env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, sender_id, sender_name, text, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).bind(
-      id,
-      conversationId,
-      body.senderId,
-      body.senderName,
-      body.text,
-      now
-    ).run();
+    if (env.DB) {
+      await env.DB.prepare(
+        `INSERT INTO messages (id, conversation_id, sender_id, sender_name, text, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(
+        id,
+        conversationId,
+        body.senderId,
+        body.senderName,
+        body.text,
+        now
+      ).run();
+    }
 
     return new Response(
       JSON.stringify({
@@ -63,14 +71,14 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         senderId: body.senderId,
         senderName: body.senderName,
         text: body.text,
-        timestamp: new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now,
       }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } }
+      { status: 201, headers: CORS_HEADERS }
     );
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: CORS_HEADERS,
     });
   }
 };

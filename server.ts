@@ -28,6 +28,17 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 app.use(express.json());
 
+// Enable CORS and handle preflight requests across environments
+app.use((req: Request, res: Response, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // In-Memory Server Authoritative State (Clean Production Database Layer)
 let dbUsers: UserProfile[] = [...INITIAL_USERS];
 let dbCommunities: Community[] = [...INITIAL_COMMUNITIES];
@@ -112,7 +123,8 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/register', (req: Request, res: Response) => {
-  const { name, email, password, employeeId, campusId, roleTitle, interests, dietary, icebreaker } = req.body;
+  const { name, email, password, campusId, roleTitle, interests, dietary, icebreaker } = req.body;
+  const employeeId = (req.body.employeeId || req.body.employee_id || '').trim();
 
   if (!name || !email || !password || !employeeId) {
     return res.status(400).json({ error: 'Name, Email ID, TCS Employee ID, and password are required.' });
