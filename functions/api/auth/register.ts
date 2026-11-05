@@ -1,4 +1,5 @@
 import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -19,7 +20,8 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
   try {
     const body: any = await request.json().catch(() => ({}));
-    const { name, email, password, employeeId, campusId, roleTitle, interests, dietary, icebreaker } = body;
+    const { name, email, password, campusId, roleTitle, interests, dietary, icebreaker } = body;
+    const employeeId = (body.employeeId || body.employee_id || '').trim();
 
     if (!name || !email || !password || !employeeId) {
       return new Response(
@@ -61,10 +63,13 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     };
 
     if (env.DB) {
-      // Check existing email
+      // 1. Ensure schema and self-heal any missing columns
+      await ensureD1Schema(env.DB);
+
+      // 2. Check existing email
       const existingEmail = await env.DB.prepare(
         `SELECT id FROM users WHERE LOWER(email) = ?`
-      ).bind(trimmedEmail).first();
+      ).bind(trimmedEmail).first().catch(() => null);
 
       if (existingEmail) {
         return new Response(
@@ -73,19 +78,58 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         );
       }
 
+      // 3. Dynamically inspect table columns to guarantee error-free INSERT
+      const tableInfo = await env.DB.prepare(`PRAGMA table_info(users);`).all<{ name: string }>().catch(() => ({ results: [] }));
+      const cols = new Set((tableInfo?.results || []).map((c) => c.name.toLowerCase()));
+
+      const insertCols: string[] = ['id', 'email'];
+      const insertVals: any[] = [newUserId, trimmedEmail];
+
+      if (cols.has('password')) {
+        insertCols.push('password');
+        insertVals.push(password);
+      }
+      if (cols.has('password_hash')) {
+        insertCols.push('password_hash');
+        insertVals.push(password);
+      }
+      if (cols.has('name')) {
+        insertCols.push('name');
+        insertVals.push(name.trim());
+      }
+      if (cols.has('employee_id')) {
+        insertCols.push('employee_id');
+        insertVals.push(trimmedEmpId);
+      }
+      if (cols.has('campus_id')) {
+        insertCols.push('campus_id');
+        insertVals.push(campusId || 'comm_siruseri');
+      }
+      if (cols.has('role_title')) {
+        insertCols.push('role_title');
+        insertVals.push(roleTitle?.trim() || 'Software Engineer');
+      }
+      if (cols.has('status')) {
+        insertCols.push('status');
+        insertVals.push('pending_approval');
+      }
+      if (cols.has('role')) {
+        insertCols.push('role');
+        insertVals.push('user');
+      }
+      if (cols.has('registered_at')) {
+        insertCols.push('registered_at');
+        insertVals.push(nowISO);
+      }
+      if (cols.has('created_at')) {
+        insertCols.push('created_at');
+        insertVals.push(Date.now());
+      }
+
+      const placeholders = insertCols.map(() => '?').join(', ');
       await env.DB.prepare(
-        `INSERT INTO users (id, email, password, name, employee_id, campus_id, role_title, status, role, registered_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_approval', 'user', ?)`
-      ).bind(
-        newUserId,
-        trimmedEmail,
-        password,
-        name.trim(),
-        trimmedEmpId,
-        campusId || 'comm_siruseri',
-        roleTitle?.trim() || 'Software Engineer',
-        nowISO
-      ).run();
+        `INSERT INTO users (${insertCols.join(', ')}) VALUES (${placeholders})`
+      ).bind(...insertVals).run();
     }
 
     const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;

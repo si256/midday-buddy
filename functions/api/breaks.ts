@@ -1,4 +1,5 @@
 import type { AppEnv, PagesFunction } from '../env';
+import { ensureD1Schema } from '../db';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +28,7 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   }
 
   try {
+    await ensureD1Schema(env.DB);
     const { results } = await env.DB.prepare(
       `SELECT b.*, u.name as user_name, u.role_title as user_role, u.avatar_seed, u.avatar_bg
        FROM breaks b

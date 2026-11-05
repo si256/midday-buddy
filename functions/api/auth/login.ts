@@ -1,4 +1,5 @@
 import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,7 @@ const DEFAULT_USERS = [
     id: 'usr_admin',
     email: 'admin@middaybuddy.com',
     password: 'Admin@12345',
+    password_hash: 'Admin@12345',
     name: 'System Administrator',
     employeeId: 'ADM-001',
     roleTitle: 'Platform Administrator',
@@ -57,6 +59,8 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     // 1. If D1 is bound, query D1 database
     if (env.DB) {
+      await ensureD1Schema(env.DB);
+
       const user = await env.DB.prepare(
         `SELECT * FROM users WHERE LOWER(email) = ?`
       ).bind(trimmedEmail).first<any>();
@@ -68,13 +72,14 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         });
       }
 
+      // Check if admin approved a password reset for this user
       if (user.password_reset_approved === 1 || user.password_reset_approved === true) {
         const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         await env.DB.prepare(
           `UPDATE users SET password_reset_approved = 0, must_change_password = 1 WHERE id = ?`
-        ).bind(user.id).run();
+        ).bind(user.id).run().catch(() => {});
 
-        const { password: _, ...safeUser } = user;
+        const { password: _, password_hash: __, ...safeUser } = user;
         return new Response(
           JSON.stringify({
             token,
@@ -93,7 +98,8 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         });
       }
 
-      if (user.password && user.password !== password) {
+      const storedPassword = user.password || user.password_hash;
+      if (storedPassword && storedPassword !== password) {
         return new Response(JSON.stringify({ error: 'Invalid Email ID or password.' }), {
           status: 401,
           headers: CORS_HEADERS,
@@ -101,12 +107,12 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
       }
 
       const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-      const { password: _, ...safeUser } = user;
+      const { password: _, password_hash: __, ...safeUser } = user;
       return new Response(
         JSON.stringify({
           token,
           user: safeUser,
-          mustChangePassword: !!user.must_change_password,
+          mustChangePassword: Boolean(user.must_change_password),
         }),
         { status: 200, headers: CORS_HEADERS }
       );
@@ -136,7 +142,7 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     }
 
     const token = `token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-    const { password: _, ...safeUser } = user;
+    const { password: _, password_hash: __, ...safeUser } = user;
     return new Response(
       JSON.stringify({
         token,

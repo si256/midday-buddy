@@ -1,4 +1,5 @@
 import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,9 +37,34 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     }
 
     if (env.DB) {
-      await env.DB.prepare(
-        `UPDATE users SET password = ?, must_change_password = 0, password_reset_approved = 0 WHERE id = ?`
-      ).bind(newPassword, userId).run();
+      await ensureD1Schema(env.DB);
+      const tableInfo = await env.DB.prepare(`PRAGMA table_info(users);`).all<{ name: string }>().catch(() => ({ results: [] }));
+      const cols = new Set((tableInfo?.results || []).map((c) => c.name.toLowerCase()));
+
+      const setClauses: string[] = [];
+      const setVals: any[] = [];
+
+      if (cols.has('password')) {
+        setClauses.push('password = ?');
+        setVals.push(newPassword);
+      }
+      if (cols.has('password_hash')) {
+        setClauses.push('password_hash = ?');
+        setVals.push(newPassword);
+      }
+      if (cols.has('must_change_password')) {
+        setClauses.push('must_change_password = 0');
+      }
+      if (cols.has('password_reset_approved')) {
+        setClauses.push('password_reset_approved = 0');
+      }
+
+      if (setClauses.length > 0) {
+        setVals.push(userId);
+        await env.DB.prepare(
+          `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`
+        ).bind(...setVals).run().catch(() => {});
+      }
     }
 
     return new Response(
