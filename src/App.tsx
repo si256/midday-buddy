@@ -40,6 +40,7 @@ import { ProfileModal } from './components/ProfileModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
+import { AdminLoginPage } from './components/AdminLoginPage';
 
 export default function App() {
   // Theme state
@@ -68,8 +69,45 @@ export default function App() {
     return user ? StorageService.getNotifications(user.id) : [];
   });
 
-  // Navigation & View State
-  const [activeView, setActiveView] = React.useState<'board' | 'admin' | 'architecture'>('board');
+  // Navigation & View State (with URL routing support for /admin)
+  const [activeView, setActiveView] = React.useState<'board' | 'admin' | 'architecture'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      const h = window.location.hash.toLowerCase();
+      if (p.startsWith('/admin') || h.includes('admin')) {
+        return 'admin';
+      }
+    }
+    return 'board';
+  });
+
+  const handleViewChange = React.useCallback((view: 'board' | 'admin' | 'architecture') => {
+    setActiveView(view);
+    if (typeof window !== 'undefined') {
+      const targetPath = view === 'admin' ? '/admin' : '/';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ view }, '', targetPath);
+      }
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const p = window.location.pathname.toLowerCase();
+      const h = window.location.hash.toLowerCase();
+      if (p.startsWith('/admin') || h.includes('admin')) {
+        setActiveView('admin');
+      } else {
+        setActiveView('board');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
   const [selectedBreakType, setSelectedBreakType] = React.useState<'all' | 'tea' | 'lunch' | 'walk'>('all');
   const [onlyFreeNow, setOnlyFreeNow] = React.useState(false);
   const [selectedZone, setSelectedZone] = React.useState<string>('all');
@@ -354,7 +392,7 @@ export default function App() {
           showToast('Signed out of MidDay Buddy.');
         }}
         activeView={activeView}
-        onChangeView={setActiveView}
+        onChangeView={handleViewChange}
         pendingApprovalsCount={pendingApprovalsCount}
         unreadNotificationsCount={unreadNotificationsCount}
         onToggleNotifications={() => setIsNotificationsOpen(!isNotificationsOpen)}
@@ -382,7 +420,7 @@ export default function App() {
       <main className="flex-1 pb-24 md:pb-16 max-w-full overflow-x-hidden">
         {/* VIEW 1: Campus Admin Portal */}
         {activeView === 'admin' ? (
-          currentUser?.role === 'community_admin' ? (
+          (currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin') ? (
             <AdminDashboard
               community={activeCommunity}
               allUsers={allUsers}
@@ -397,23 +435,17 @@ export default function App() {
               onSwitchToApprovedUser={() => {
                 const approvedUser = allUsers.find((u) => u.status === 'approved' && u.role === 'user') || allUsers[0];
                 setCurrentUser(approvedUser);
-                setActiveView('board');
+                handleViewChange('board');
               }}
             />
           ) : (
-            <div className="mx-auto max-w-lg p-12 text-center">
-              <ShieldCheck className="mx-auto h-12 w-12 text-indigo-500" />
-              <h2 className="mt-3 text-lg font-bold">Admin Portal Access Restricted</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                You must be logged in as a Campus Administrator to access this section.
-              </p>
-              <button
-                onClick={() => setIsAuthOpen(true)}
-                className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700"
-              >
-                Sign In as Admin
-              </button>
-            </div>
+            <AdminLoginPage
+              onLoginSuccess={(admin) => {
+                setCurrentUser(admin);
+                showToast(`Signed in as ${admin.name}`);
+              }}
+              onGoBack={() => handleViewChange('board')}
+            />
           )
         ) : !currentUser ? (
           /* VIEW 2: Unauthenticated Visitor Landing */
@@ -747,7 +779,7 @@ export default function App() {
       {/* Mobile Ergonomic Bottom Navigation Bar */}
       <MobileBottomNav
         activeView={activeView}
-        onChangeView={setActiveView}
+        onChangeView={handleViewChange}
         onOpenBroadcast={() => setIsBroadcastOpen(true)}
         onToggleNotifications={() => setIsNotificationsOpen(!isNotificationsOpen)}
         unreadNotificationsCount={unreadNotificationsCount}
