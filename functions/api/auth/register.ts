@@ -25,7 +25,7 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     if (!name || !email || !password || !employeeId) {
       return new Response(
-        JSON.stringify({ error: 'Please provide full name, Email ID, password, and TCS Employee ID.' }),
+        JSON.stringify({ error: 'Please provide full name, Email ID, password, and Employee ID.' }),
         { status: 400, headers: CORS_HEADERS }
       );
     }
@@ -74,6 +74,18 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
       if (existingEmail) {
         return new Response(
           JSON.stringify({ error: 'This Email ID is already registered. Please sign in or use another email.' }),
+          { status: 400, headers: CORS_HEADERS }
+        );
+      }
+
+      // Check existing Employee ID
+      const existingEmp = await env.DB.prepare(
+        `SELECT id FROM users WHERE UPPER(employee_id) = ?`
+      ).bind(trimmedEmpId).first().catch(() => null);
+
+      if (existingEmp) {
+        return new Response(
+          JSON.stringify({ error: 'This Employee ID is already registered to another account.' }),
           { status: 400, headers: CORS_HEADERS }
         );
       }

@@ -74,7 +74,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMessage('');
 
     if (!name.trim() || !email.trim() || !password || !employeeId.trim()) {
-      setErrorMessage('Please fill in your name, Email ID, TCS Employee ID, and password.');
+      setErrorMessage('Please fill in your name, Email ID, Employee ID, and password.');
       return;
     }
 
@@ -122,7 +122,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMessage('');
 
     if (!email.trim() || !employeeId.trim()) {
-      setErrorMessage('Please provide your registered Email ID and TCS Employee ID.');
+      setErrorMessage('Please provide your registered Email ID and Employee ID.');
       return;
     }
 
@@ -338,7 +338,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  TCS Employee ID *
+                  Employee ID *
                 </label>
                 <input
                   type="text"
@@ -507,7 +507,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  TCS Employee ID *
+                  Employee ID *
                 </label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />

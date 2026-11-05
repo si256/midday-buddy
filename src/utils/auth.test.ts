@@ -17,7 +17,7 @@ export function validateRegistrationInput(input: {
     return { valid: false, error: 'Valid Email ID is required' };
   }
   if (!input.employeeId || !input.employeeId.trim()) {
-    return { valid: false, error: 'TCS Employee ID is required' };
+    return { valid: false, error: 'Employee ID is required' };
   }
   if (!input.password || input.password.length < 6) {
     return { valid: false, error: 'Password must be at least 6 characters' };
@@ -36,9 +36,15 @@ export function validateForgotPasswordInput(input: {
     return { valid: false, error: 'Valid Email ID is required' };
   }
   if (!input.employeeId || !input.employeeId.trim()) {
-    return { valid: false, error: 'TCS Employee ID is required' };
+    return { valid: false, error: 'Employee ID is required' };
   }
   return { valid: true };
+}
+
+export function checkUniqueEmployeeId(existingUsers: Array<{ employeeId?: string }>, newEmpId: string): boolean {
+  const normalized = (newEmpId || '').trim().toUpperCase();
+  if (!normalized) return false;
+  return !existingUsers.some((u) => u.employeeId?.trim().toUpperCase() === normalized);
 }
 
 export function canBroadcastBreak(user: { status: UserApprovalStatus; role: UserRole }): boolean {
@@ -90,11 +96,11 @@ export function processPasswordChange(
 // TEST SUITE: AUTHENTICATION & ACCESS CONTROL
 // ==========================================
 
-test('validateRegistrationInput enforces required fields including TCS Employee ID and password length', () => {
+test('validateRegistrationInput enforces required fields including Employee ID and password length', () => {
   assert.equal(validateRegistrationInput({}).valid, false);
   assert.equal(validateRegistrationInput({ name: 'Rahul' }).valid, false);
   assert.equal(
-    validateRegistrationInput({ name: 'Rahul', email: 'rahul@tcs.com', employeeId: 'TCS-101', password: '123' }).valid,
+    validateRegistrationInput({ name: 'Rahul', email: 'rahul@tcs.com', employeeId: 'EMP-101', password: '123' }).valid,
     false
   );
   assert.equal(
@@ -105,7 +111,7 @@ test('validateRegistrationInput enforces required fields including TCS Employee 
     validateRegistrationInput({
       name: 'Rahul',
       email: 'rahul@tcs.com',
-      employeeId: 'TCS-101',
+      employeeId: 'EMP-101',
       password: 'password123',
       confirmPassword: 'different',
     }).valid,
@@ -115,7 +121,7 @@ test('validateRegistrationInput enforces required fields including TCS Employee 
     validateRegistrationInput({
       name: 'Rahul',
       email: 'rahul@tcs.com',
-      employeeId: 'TCS-101',
+      employeeId: 'EMP-101',
       password: 'password123',
       confirmPassword: 'password123',
     }).valid,
@@ -123,11 +129,23 @@ test('validateRegistrationInput enforces required fields including TCS Employee 
   );
 });
 
-test('validateForgotPasswordInput enforces Email ID and TCS Employee ID', () => {
+test('validateForgotPasswordInput enforces Email ID and Employee ID', () => {
   assert.equal(validateForgotPasswordInput({}).valid, false);
   assert.equal(validateForgotPasswordInput({ email: 'user@example.com' }).valid, false);
-  assert.equal(validateForgotPasswordInput({ employeeId: 'TCS-999' }).valid, false);
-  assert.equal(validateForgotPasswordInput({ email: 'user@example.com', employeeId: 'TCS-999' }).valid, true);
+  assert.equal(validateForgotPasswordInput({ employeeId: 'EMP-999' }).valid, false);
+  assert.equal(validateForgotPasswordInput({ email: 'user@example.com', employeeId: 'EMP-999' }).valid, true);
+});
+
+test('checkUniqueEmployeeId blocks duplicate employee IDs across cases and spaces', () => {
+  const existingUsers = [
+    { employeeId: 'EMP-1001' },
+    { employeeId: 'ADM-001' },
+    { employeeId: 'DEV-404' },
+  ];
+  assert.equal(checkUniqueEmployeeId(existingUsers, 'EMP-1002'), true);
+  assert.equal(checkUniqueEmployeeId(existingUsers, 'emp-1001'), false);
+  assert.equal(checkUniqueEmployeeId(existingUsers, ' ADM-001 '), false);
+  assert.equal(checkUniqueEmployeeId(existingUsers, ''), false);
 });
 
 test('verifyPassword validates matching credentials and rejects incorrect ones', () => {

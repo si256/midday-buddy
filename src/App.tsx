@@ -38,7 +38,6 @@ import { PendingApprovalView } from './components/PendingApprovalView';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { NotificationCenter } from './components/NotificationCenter';
-import { ZeroCostArchitectureModal } from './components/ZeroCostArchitectureModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 
@@ -82,7 +81,6 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = React.useState(false);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
-  const [isZeroCostOpen, setIsZeroCostOpen] = React.useState(false);
 
   // Toast notification state
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
@@ -324,31 +322,17 @@ export default function App() {
     }
   };
 
-  // New user registration (Server API)
-  const handleRegisterNewUser = async (newUser: UserProfile) => {
-    try {
-      const targetCampusId = newUser.campusId || activeCommunity.id;
-      const registered = await ApiService.registerUser({
-        name: newUser.name,
-        email: newUser.email,
-        campusId: targetCampusId,
-        roleTitle: newUser.roleTitle,
-        communityId: targetCampusId,
-        interests: newUser.interests,
-        dietary: newUser.dietary,
-        icebreaker: newUser.icebreaker,
-      });
-      setAllUsers((prev) => [...prev, registered]);
-      setCurrentUser(registered);
-      const userCampus = communities.find((c) => c.id === targetCampusId);
-      if (userCampus) {
-        setActiveCommunity(userCampus);
-      }
-      setActiveView('board');
-      showToast(`Welcome ${registered.name}! Waiting approval by admin.`);
-    } catch (err: any) {
-      showToast(`Registration failed: ${err.message}`);
+  // New user registration callback (User is already registered by AuthModal)
+  const handleRegisterNewUser = (newUser: UserProfile) => {
+    setAllUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
+    setCurrentUser(newUser);
+    const targetCampusId = newUser.campusId || activeCommunity.id;
+    const userCampus = communities.find((c) => c.id === targetCampusId);
+    if (userCampus) {
+      setActiveCommunity(userCampus);
     }
+    setActiveView('board');
+    showToast(`Welcome ${newUser.name}! Waiting approval by admin.`);
   };
 
   return (
@@ -369,7 +353,6 @@ export default function App() {
           setCurrentUser(null);
           showToast('Signed out of MidDay Buddy.');
         }}
-        onOpenZeroCostModal={() => setIsZeroCostOpen(true)}
         activeView={activeView}
         onChangeView={setActiveView}
         pendingApprovalsCount={pendingApprovalsCount}
@@ -730,12 +713,6 @@ export default function App() {
           onSaveProfile={handleSaveProfile}
         />
       )}
-
-      {/* 6. Zero-Cost Cloudflare Deployment Modal */}
-      <ZeroCostArchitectureModal
-        isOpen={isZeroCostOpen}
-        onClose={() => setIsZeroCostOpen(false)}
-      />
 
       {/* 7. Mandatory Force Password Change Modal (After Admin Approved Reset) */}
       {currentUser && currentUser.mustChangePassword && (

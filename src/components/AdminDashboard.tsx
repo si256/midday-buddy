@@ -291,7 +291,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{applicant.email}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-400">TCS Employee ID:</span>
+                        <span className="text-slate-400">Employee ID:</span>
                         <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400">{applicant.employeeId || 'N/A'}</span>
                       </div>
                       <div className="flex justify-between">
@@ -378,7 +378,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {reqItem.userName}
                           </h3>
                           <div className="text-xs text-slate-500 dark:text-slate-400">
-                            TCS Employee ID: <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{reqItem.employeeId}</span>
+                            Employee ID: <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{reqItem.employeeId}</span>
                           </div>
                         </div>
                       </div>
@@ -393,7 +393,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{reqItem.email}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-400">TCS Employee ID:</span>
+                        <span className="text-slate-400">Employee ID:</span>
                         <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">{reqItem.employeeId}</span>
                       </div>
                       <div className="flex justify-between">
@@ -468,7 +468,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div>
                             <div className="font-semibold text-slate-900 dark:text-white">{member.name}</div>
                             <div className="text-[11px] text-slate-500">
-                              {member.roleTitle} {member.employeeId ? `· TCS ID: ${member.employeeId}` : ''}
+                              {member.roleTitle} {member.employeeId ? `· Emp ID: ${member.employeeId}` : ''}
                             </div>
                           </div>
                         </div>

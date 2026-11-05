@@ -23,7 +23,7 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     if (!email || !employeeId) {
       return new Response(
-        JSON.stringify({ error: 'Email ID and TCS Employee ID are required.' }),
+        JSON.stringify({ error: 'Email ID and Employee ID are required.' }),
         { status: 400, headers: CORS_HEADERS }
       );
     }

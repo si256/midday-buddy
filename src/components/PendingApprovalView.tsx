@@ -41,7 +41,7 @@ export const PendingApprovalView: React.FC<PendingApprovalViewProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-semibold text-slate-900 dark:text-white">Account Details Submitted</div>
-                  <div className="text-[11px] text-slate-500">Email ID: {user.email} · TCS Employee ID: {user.employeeId || user.campusId}</div>
+                  <div className="text-[11px] text-slate-500">Email ID: {user.email} · Employee ID: {user.employeeId || user.campusId}</div>
                 </div>
               </div>
 
@@ -82,7 +82,7 @@ export const PendingApprovalView: React.FC<PendingApprovalViewProps> = ({
                 <p className="font-semibold text-slate-900 dark:text-white">{user.roleTitle}</p>
               </div>
               <div>
-                <span className="text-slate-500 dark:text-slate-400">TCS Employee ID</span>
+                <span className="text-slate-500 dark:text-slate-400">Employee ID</span>
                 <p className="font-semibold text-slate-900 dark:text-white font-mono">{user.employeeId || user.campusId}</p>
               </div>
               <div>

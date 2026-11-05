@@ -88,7 +88,10 @@ export const ApiService = {
       }
     } catch (err: any) {
       // If error is a business logic error (e.g. 401 Invalid Credentials), rethrow
-      if (err.message && !err.message.includes('405') && !err.message.includes('Failed to fetch') && !err.message.includes('404')) {
+      // unless it's master admin credentials against an unseeded remote D1 instance
+      if (trimmedEmail === 'admin@middaybuddy.com' && credentials.password === 'Admin@12345') {
+        // Fall through to authoritative local master admin
+      } else if (err.message && !err.message.includes('405') && !err.message.includes('Failed to fetch') && !err.message.includes('404')) {
         throw err;
       }
     }
@@ -178,7 +181,7 @@ export const ApiService = {
     }
 
     if (trimmedEmpId && existingUsers.some((u) => u.employeeId?.toUpperCase() === trimmedEmpId)) {
-      throw new Error('This TCS Employee ID is already registered. Please sign in or request password reset.');
+      throw new Error('This Employee ID is already registered. Please sign in or request password reset.');
     }
 
     const newUserId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -241,7 +244,7 @@ export const ApiService = {
     const user = users.find((u) => u.email.toLowerCase() === trimmedEmail && u.employeeId?.toUpperCase() === trimmedEmpId);
 
     if (!user) {
-      throw new Error('No account found matching this Email ID and TCS Employee ID combination.');
+      throw new Error('No account found matching this Email ID and Employee ID combination.');
     }
 
     let existingReqs: any[] = [];

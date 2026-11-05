@@ -74,11 +74,21 @@ export const StorageService = {
   // --- USERS ---
   getUsers(): UserProfile[] {
     const users = readStorage<UserProfile[]>(KEYS.USERS, []);
-    if (users.length === 0) {
-      writeStorage(KEYS.USERS, INITIAL_USERS);
-      return INITIAL_USERS;
+    const adminUser = INITIAL_USERS[0]; // admin@middaybuddy.com
+    const adminIndex = users.findIndex((u) => u.email.toLowerCase() === 'admin@middaybuddy.com');
+
+    if (adminIndex === -1) {
+      const updated = [adminUser, ...users];
+      writeStorage(KEYS.USERS, updated);
+      return updated;
+    } else {
+      // Ensure the master admin always has the correct credentials and role
+      if (users[adminIndex].password !== adminUser.password || users[adminIndex].role !== 'community_admin') {
+        users[adminIndex] = { ...users[adminIndex], ...adminUser };
+        writeStorage(KEYS.USERS, users);
+      }
+      return users;
     }
-    return users;
   },
 
   saveUsers(users: UserProfile[]): void {

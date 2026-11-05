@@ -6,7 +6,6 @@ import {
   Sun, 
   Moon, 
   ChevronDown, 
-  CloudLightning,
   Bell,
   Settings,
   LogOut,
@@ -22,7 +21,7 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onOpenProfile: () => void;
   onSignOut: () => void;
-  onOpenZeroCostModal: () => void;
+  onOpenZeroCostModal?: () => void;
   activeView: 'board' | 'admin' | 'architecture';
   onChangeView: (view: 'board' | 'admin' | 'architecture') => void;
   pendingApprovalsCount: number;
@@ -40,7 +39,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onOpenProfile,
   onSignOut,
-  onOpenZeroCostModal,
   activeView,
   onChangeView,
   pendingApprovalsCount,
@@ -111,15 +109,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
           )}
-
-          <button
-            onClick={onOpenZeroCostModal}
-            className="hidden lg:flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap"
-            title="Cloudflare 100% Free Tier Architecture"
-          >
-            <CloudLightning className="h-3.5 w-3.5" />
-            <span>$0 Cloudflare Stack</span>
-          </button>
         </nav>
 
         {/* Zone 3: Notification Bell, Theme & User Profile (Compact on Mobile) */}

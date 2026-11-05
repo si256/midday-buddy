@@ -17,7 +17,7 @@ export interface UserProfile {
   name: string;
   roleTitle: string; // e.g. "Software Engineer", "Systems Analyst"
   campusId: string;
-  employeeId?: string; // TCS Employee ID
+  employeeId?: string; // Employee ID
   avatarSeed: string;
   avatarBgColor: string;
   bio: string;
