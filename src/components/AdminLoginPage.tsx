@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, Mail, Eye, EyeOff, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
 import { ApiService } from '../services/api';
 import { UserProfile } from '../types';
 
@@ -12,7 +12,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   onLoginSuccess,
   onGoBack,
 }) => {
-  const [email, setEmail] = React.useState('admin@middaybuddy.com');
+  const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -45,12 +45,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handlePreFillMasterAdmin = () => {
-    setEmail('admin@middaybuddy.com');
-    setPassword('Admin@12345');
-    setErrorMessage('');
   };
 
   return (
@@ -149,26 +143,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 )}
               </button>
             </form>
-
-            {/* Quick Fill / Hint Box for testing */}
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5 dark:border-amber-900/50 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                  Master Admin Credentials
-                </span>
-                <button
-                  type="button"
-                  onClick={handlePreFillMasterAdmin}
-                  className="rounded-lg bg-amber-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors shadow-sm"
-                >
-                  Fill Credentials
-                </button>
-              </div>
-              <p className="text-[11px] text-amber-800 dark:text-amber-300 font-mono">
-                admin@middaybuddy.com · Admin@12345
-              </p>
-            </div>
           </div>
         </div>
       </div>

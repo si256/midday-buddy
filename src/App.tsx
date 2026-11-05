@@ -24,7 +24,8 @@ import {
   AuditLog, 
   BreakType,
   AppNotification,
-  PasswordResetRequest 
+  PasswordResetRequest,
+  UserRole
 } from './types';
 import { StorageService } from './services/storage';
 import { ApiService } from './services/api';
@@ -188,15 +189,15 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Automatically sync activeCommunity to user's registered campus
+  // Automatically sync activeCommunity to user's registered campus (when on board view)
   React.useEffect(() => {
-    if (currentUser?.campusId && communities.length > 0) {
+    if (currentUser?.campusId && communities.length > 0 && activeView !== 'admin') {
       const match = communities.find((c) => c.id === currentUser.campusId);
       if (match && match.id !== activeCommunity.id) {
         setActiveCommunity(match);
       }
     }
-  }, [currentUser?.campusId, communities, activeCommunity.id]);
+  }, [currentUser?.campusId, communities, activeCommunity.id, activeView]);
 
   // Reset zone filter whenever campus changes
   React.useEffect(() => {
@@ -268,22 +269,126 @@ export default function App() {
     }
   };
 
-  const handleAddLocation = async (name: string, zone: string, description: string) => {
+  const handleCreateCommunity = async (data: { name: string; city: string; description?: string }) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { community } = await ApiService.createCommunity(data, adminInfo);
+      setCommunities((prev) => [...prev, community]);
+      showToast(`Created new campus "${community.name}"!`);
+      await syncWithBackend();
+    } catch (err: any) {
+      showToast(`Create campus failed: ${err.message}`);
+    }
+  };
+
+  const handleUpdateCommunity = async (id: string, data: { name: string; city: string; description?: string }) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { community } = await ApiService.updateCommunity(id, data, adminInfo);
+      setCommunities((prev) => prev.map((c) => (c.id === id ? { ...c, ...community } : c)));
+      if (activeCommunity.id === id) {
+        setActiveCommunity((prev) => ({ ...prev, ...community }));
+      }
+      showToast(`Updated campus "${community.name}".`);
+      await syncWithBackend();
+    } catch (err: any) {
+      showToast(`Update campus failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteCommunity = async (id: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      await ApiService.deleteCommunity(id, adminInfo);
+      setCommunities((prev) => prev.filter((c) => c.id !== id));
+      if (activeCommunity.id === id) {
+        const remaining = communities.filter((c) => c.id !== id);
+        if (remaining.length > 0) setActiveCommunity(remaining[0]);
+      }
+      showToast('Deleted campus.');
+      await syncWithBackend();
+    } catch (err: any) {
+      showToast(`Delete campus failed: ${err.message}`);
+    }
+  };
+
+  const handleAddLocation = async (communityId: string, name: string, zone: string, description: string, isPopular?: boolean) => {
     try {
       const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
       const newLoc: CampusLocation = {
         id: `loc_${Date.now()}`,
-        communityId: activeCommunity.id,
+        communityId,
         name,
         zone,
         description,
-        isPopular: false,
+        isPopular: !!isPopular,
       };
-      await ApiService.addLocation(activeCommunity.id, newLoc, adminInfo);
+      await ApiService.addLocation(communityId, newLoc, adminInfo);
       await syncWithBackend();
-      showToast(`Added new campus spot "${name}"!`);
+      showToast(`Added new spot "${name}"!`);
     } catch (err: any) {
-      showToast(`Add location failed: ${err.message}`);
+      showToast(`Add spot failed: ${err.message}`);
+    }
+  };
+
+  const handleUpdateLocation = async (communityId: string, locId: string, updates: Partial<CampusLocation>) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      await ApiService.updateLocation(communityId, locId, updates, adminInfo);
+      await syncWithBackend();
+      showToast('Updated spot details.');
+    } catch (err: any) {
+      showToast(`Update spot failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteLocation = async (communityId: string, locId: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      await ApiService.deleteLocation(communityId, locId, adminInfo);
+      await syncWithBackend();
+      showToast('Deleted spot.');
+    } catch (err: any) {
+      showToast(`Delete spot failed: ${err.message}`);
+    }
+  };
+
+  const handleChangeUserRole = async (userId: string, newRole: UserRole) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { user: updatedUser, log } = await ApiService.updateUserRole(userId, newRole, adminInfo);
+      setAllUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
+      setAuditLogs((prev) => [log, ...prev]);
+      if (currentUser?.id === userId) {
+        setCurrentUser((prev) => prev ? { ...prev, role: newRole } : null);
+      }
+      showToast(`Updated role for ${updatedUser.name} to ${newRole === 'community_admin' ? 'Campus Admin' : 'Member'}.`);
+    } catch (err: any) {
+      showToast(`Role change failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { log } = await ApiService.deleteUser(userId, adminInfo);
+      setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+      setAuditLogs((prev) => [log, ...prev]);
+      showToast('Deleted user account.');
+    } catch (err: any) {
+      showToast(`Delete user failed: ${err.message}`);
+    }
+  };
+
+  const handleCreateUser = async (userData: any) => {
+    try {
+      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
+      const { user: newUser, log } = await ApiService.createUser(userData, adminInfo);
+      setAllUsers((prev) => [newUser, ...prev]);
+      setAuditLogs((prev) => [log, ...prev]);
+      showToast(`Created account for ${newUser.name}!`);
+    } catch (err: any) {
+      showToast(`Create user failed: ${err.message}`);
     }
   };
 
@@ -422,13 +527,23 @@ export default function App() {
         {activeView === 'admin' ? (
           (currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin') ? (
             <AdminDashboard
-              community={activeCommunity}
+              communities={communities}
+              activeCommunity={activeCommunity}
+              onSelectCommunity={(comm) => setActiveCommunity(comm)}
+              onCreateCommunity={handleCreateCommunity}
+              onUpdateCommunity={handleUpdateCommunity}
+              onDeleteCommunity={handleDeleteCommunity}
               allUsers={allUsers}
               onApproveUser={handleApproveUser}
               onRejectUser={handleRejectUser}
               onToggleUserStatus={handleToggleUserStatus}
+              onChangeUserRole={handleChangeUserRole}
+              onDeleteUser={handleDeleteUser}
+              onCreateUser={handleCreateUser}
               locations={activeCommunity.locations}
               onAddLocation={handleAddLocation}
+              onUpdateLocation={handleUpdateLocation}
+              onDeleteLocation={handleDeleteLocation}
               auditLogs={auditLogs}
               resetRequests={resetRequests}
               onApproveResetRequest={handleApproveResetRequest}

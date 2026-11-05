@@ -49,9 +49,9 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   try {
     await ensureD1Schema(env.DB);
     const { results } = await env.DB.prepare(
-      `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users ORDER BY created_at DESC`
+      `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users WHERE status IS NULL OR status != 'rejected' ORDER BY created_at DESC`
     ).all().catch(async () => {
-      return await env.DB!.prepare(`SELECT * FROM users;`).all();
+      return await env.DB!.prepare(`SELECT * FROM users WHERE status IS NULL OR status != 'rejected';`).all();
     });
 
     return new Response(JSON.stringify(results && results.length > 0 ? results : DEFAULT_USERS), {
@@ -95,11 +95,15 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
       }
       if (cols.has('status')) {
         insertCols.push('status');
-        insertVals.push('pending_approval');
+        insertVals.push(body.status || 'pending_approval');
       }
       if (cols.has('role')) {
         insertCols.push('role');
-        insertVals.push('user');
+        insertVals.push(body.role || 'user');
+      }
+      if (cols.has('password') && body.password) {
+        insertCols.push('password');
+        insertVals.push(body.password);
       }
       if (cols.has('registered_at')) {
         insertCols.push('registered_at');

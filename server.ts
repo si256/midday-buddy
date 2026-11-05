@@ -405,6 +405,154 @@ app.post('/api/communities/:id/locations', (req: Request, res: Response) => {
   res.status(201).json({ success: true, location, community });
 });
 
+// Edit campus location spot
+app.put('/api/communities/:id/locations/:locId', (req: Request, res: Response) => {
+  const { id, locId } = req.params;
+  const { name, zone, description, isPopular, adminId, adminName } = req.body;
+
+  const community = dbCommunities.find((c) => c.id === id);
+  if (!community) {
+    return res.status(404).json({ error: 'Community not found' });
+  }
+
+  const loc = community.locations.find((l) => l.id === locId);
+  if (!loc) {
+    return res.status(404).json({ error: 'Location spot not found' });
+  }
+
+  if (name) loc.name = name.trim();
+  if (zone) loc.zone = zone.trim();
+  if (description !== undefined) loc.description = description.trim();
+  if (isPopular !== undefined) loc.isPopular = Boolean(isPopular);
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'UPDATE_LOCATION' as any,
+    details: `Updated spot "${loc.name}" (${loc.zone}) in ${community.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, location: loc, community });
+});
+
+// Delete campus location spot
+app.delete('/api/communities/:id/locations/:locId', (req: Request, res: Response) => {
+  const { id, locId } = req.params;
+  const { adminId, adminName } = req.body;
+
+  const community = dbCommunities.find((c) => c.id === id);
+  if (!community) {
+    return res.status(404).json({ error: 'Community not found' });
+  }
+
+  const locIndex = community.locations.findIndex((l) => l.id === locId);
+  if (locIndex === -1) {
+    return res.status(404).json({ error: 'Location spot not found' });
+  }
+
+  const removedLoc = community.locations.splice(locIndex, 1)[0];
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'DELETE_LOCATION' as any,
+    details: `Deleted spot "${removedLoc.name}" from ${community.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, deletedLocationId: locId, community });
+});
+
+// Add new campus
+app.post('/api/communities', (req: Request, res: Response) => {
+  const { name, city, description, adminId, adminName } = req.body;
+  if (!name || !city) {
+    return res.status(400).json({ error: 'Name and city are required' });
+  }
+
+  const newComm: Community = {
+    id: `comm_${Date.now()}`,
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    name: name.trim(),
+    city: city.trim(),
+    description: description?.trim() || '',
+    memberCount: 0,
+    activeBreaksCount: 0,
+    locations: [],
+  };
+
+  dbCommunities.push(newComm);
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'ADD_COMMUNITY' as any,
+    details: `Added new campus: ${newComm.name} (${newComm.city})`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.status(201).json({ success: true, community: newComm });
+});
+
+// Update campus
+app.put('/api/communities/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, city, description, adminId, adminName } = req.body;
+
+  const community = dbCommunities.find((c) => c.id === id);
+  if (!community) {
+    return res.status(404).json({ error: 'Community not found' });
+  }
+
+  if (name) community.name = name.trim();
+  if (city) community.city = city.trim();
+  if (description !== undefined) community.description = description.trim();
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'UPDATE_COMMUNITY' as any,
+    details: `Updated campus info for ${community.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, community });
+});
+
+// Delete campus
+app.delete('/api/communities/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { adminId, adminName } = req.body;
+
+  const commIndex = dbCommunities.findIndex((c) => c.id === id);
+  if (commIndex === -1) {
+    return res.status(404).json({ error: 'Community not found' });
+  }
+
+  const removed = dbCommunities.splice(commIndex, 1)[0];
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'DELETE_COMMUNITY' as any,
+    details: `Deleted campus ${removed.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, deletedCommunityId: id });
+});
+
 // ==========================================
 // 3. BREAKS (DIRECTORY, BROADCAST, EXTEND, FINISH)
 // ==========================================
@@ -669,6 +817,121 @@ app.post('/api/users/:id/toggle-status', (req: Request, res: Response) => {
   dbAuditLogs.unshift(log);
 
   res.json({ success: true, user, log });
+});
+
+// Admin: Change user role (Promote to Campus Admin / Demote to regular user)
+app.post('/api/users/:id/role', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { role, adminId, adminName } = req.body;
+
+  const user = dbUsers.find((u) => u.id === id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const newRole = role === 'community_admin' ? 'community_admin' : 'user';
+  user.role = newRole;
+
+  const actionText = newRole === 'community_admin' ? 'Promoted to Campus Admin' : 'Revoked Campus Admin rights';
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'CHANGE_ROLE' as any,
+    targetUserId: user.id,
+    targetUserName: user.name,
+    details: `${actionText} for ${user.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, user, log });
+});
+
+// Admin: Delete user permanently
+app.delete('/api/users/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { adminId, adminName } = req.body;
+
+  const userIndex = dbUsers.findIndex((u) => u.id === id);
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const deletedUser = dbUsers.splice(userIndex, 1)[0];
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'DELETE_USER' as any,
+    targetUserId: deletedUser.id,
+    targetUserName: deletedUser.name,
+    details: `Deleted user account for ${deletedUser.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.json({ success: true, deletedUserId: id, log });
+});
+
+// Admin: Direct create user / admin
+app.post('/api/users', (req: Request, res: Response) => {
+  const { name, email, employeeId, role, roleTitle, campusId, password, adminId, adminName } = req.body;
+
+  if (!name || !email || !employeeId) {
+    return res.status(400).json({ error: 'Name, email, and employee ID are required.' });
+  }
+
+  const normalizedEmpId = employeeId.trim().toUpperCase();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (dbUsers.some((u) => u.email.toLowerCase() === normalizedEmail)) {
+    return res.status(409).json({ error: 'This Email ID is already registered.' });
+  }
+
+  if (dbUsers.some((u) => u.employeeId?.toUpperCase() === normalizedEmpId)) {
+    return res.status(409).json({ error: 'This Employee ID is already registered to another account.' });
+  }
+
+  const newUser: UserProfile = {
+    id: `usr_${Date.now()}`,
+    email: normalizedEmail,
+    name: name.trim(),
+    employeeId: normalizedEmpId,
+    role: role === 'community_admin' ? 'community_admin' : 'user',
+    roleTitle: roleTitle?.trim() || (role === 'community_admin' ? 'Campus Administrator' : 'Software Engineer'),
+    campusId: campusId || 'comm_siruseri',
+    status: 'approved',
+    avatarBgColor: role === 'community_admin' ? 'bg-indigo-600' : 'bg-emerald-600',
+    avatarSeed: name.trim(),
+    bio: `Colleague at ${campusId || 'Workplace Campus'}.`,
+    icebreaker: 'Let us connect for chai and breaks!',
+    interests: ['Workplace Well-being', 'Technology'],
+    dietary: 'Any',
+    socialBattery: 'Balanced Banter',
+    registeredAt: new Date().toISOString(),
+    approvedAt: new Date().toISOString(),
+    password: password || 'Buddy@12345',
+    mustChangePassword: false,
+    passwordResetApproved: false,
+  };
+
+  dbUsers.unshift(newUser);
+
+  const log: AuditLog = {
+    id: `log_${Date.now()}`,
+    adminId: adminId || 'admin',
+    adminName: adminName || 'Campus Admin',
+    action: 'CREATE_USER' as any,
+    targetUserId: newUser.id,
+    targetUserName: newUser.name,
+    details: `Directly registered ${newUser.role === 'community_admin' ? 'Campus Admin' : 'Member'} ${newUser.name}`,
+    timestamp: new Date().toISOString(),
+  };
+  dbAuditLogs.unshift(log);
+
+  res.status(201).json({ success: true, user: newUser, log });
 });
 
 app.put('/api/users/:id', (req: Request, res: Response) => {

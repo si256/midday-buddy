@@ -1,4 +1,5 @@
 import type { AppEnv, PagesFunction } from '../env';
+import { ensureD1Schema } from '../db';
 
 const DEFAULT_COMMUNITIES = [
   {
@@ -60,7 +61,7 @@ const DEFAULT_COMMUNITIES = [
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Content-Type': 'application/json',
 };
@@ -82,15 +83,100 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   }
 
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT * FROM communities ORDER BY name ASC`
-    ).all();
+    await ensureD1Schema(env.DB);
+    const commsResult = await env.DB.prepare(`SELECT * FROM communities ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
+    const locsResult = await env.DB.prepare(`SELECT * FROM locations ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
 
-    return new Response(JSON.stringify(results && results.length > 0 ? results : DEFAULT_COMMUNITIES), {
+    let comms = commsResult.results || [];
+    const locs = locsResult.results || [];
+
+    if (!comms || comms.length === 0) {
+      return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
+        headers: CORS_HEADERS,
+      });
+    }
+
+    // Attach mapped locations to each community
+    const enriched = comms.map((c) => ({
+      id: c.id,
+      slug: c.slug || c.id,
+      name: c.name,
+      city: c.city || 'Chennai',
+      description: c.description || '',
+      memberCount: c.member_count || 0,
+      activeBreaksCount: c.active_breaks_count || 0,
+      locations: locs
+        .filter((l) => l.community_id === c.id)
+        .map((l) => ({
+          id: l.id,
+          communityId: l.community_id,
+          name: l.name,
+          zone: l.zone,
+          description: l.description || '',
+          isPopular: Boolean(l.is_popular),
+        })),
+    }));
+
+    return new Response(JSON.stringify(enriched), {
+      headers: CORS_HEADERS,
+    });
+  } catch {
+    return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
+      headers: CORS_HEADERS,
+    });
+  }
+};
+
+export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
+  const { env, request } = context;
+
+  try {
+    const body: any = await request.json().catch(() => ({}));
+    if (!body.name || !body.city) {
+      return new Response(JSON.stringify({ error: 'Name and city are required' }), {
+        status: 400,
+        headers: CORS_HEADERS,
+      });
+    }
+
+    const id = body.id || `comm_${Date.now()}`;
+    const slug = body.slug || body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const nowISO = new Date().toISOString();
+    const adminId = body.adminId || 'admin';
+    const adminName = body.adminName || 'Campus Admin';
+
+    if (env.DB) {
+      await ensureD1Schema(env.DB);
+      await env.DB.prepare(`
+        INSERT INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, 0, ?);
+      `).bind(id, slug, body.name.trim(), body.city.trim(), body.description?.trim() || '', Date.now()).run();
+
+      const logId = `log_${Date.now()}`;
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (id, admin_id, admin_name, action, details, timestamp)
+        VALUES (?, ?, ?, 'ADD_COMMUNITY', ?, ?);
+      `).bind(logId, adminId, adminName, `Created new campus: ${body.name} (${body.city})`, nowISO).run().catch(() => {});
+    }
+
+    const newCommunity = {
+      id,
+      slug,
+      name: body.name.trim(),
+      city: body.city.trim(),
+      description: body.description?.trim() || '',
+      memberCount: 0,
+      activeBreaksCount: 0,
+      locations: [],
+    };
+
+    return new Response(JSON.stringify({ success: true, community: newCommunity }), {
+      status: 201,
       headers: CORS_HEADERS,
     });
   } catch (err: any) {
-    return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
       headers: CORS_HEADERS,
     });
   }

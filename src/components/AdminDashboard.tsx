@@ -14,18 +14,43 @@ import {
   Users,
   Clock,
   Sparkles,
-  KeyRound
+  KeyRound,
+  Trash2,
+  Edit2,
+  ShieldAlert,
+  Shield,
+  ArrowRight,
+  Check,
+  X
 } from 'lucide-react';
-import { UserProfile, Community, CampusLocation, AuditLog, PasswordResetRequest } from '../types';
+import { UserProfile, Community, CampusLocation, AuditLog, PasswordResetRequest, UserRole } from '../types';
 
 interface AdminDashboardProps {
-  community: Community;
+  communities: Community[];
+  activeCommunity: Community;
+  onSelectCommunity: (community: Community) => void;
+  onCreateCommunity: (data: { name: string; city: string; description?: string }) => Promise<void>;
+  onUpdateCommunity: (id: string, data: { name: string; city: string; description?: string }) => Promise<void>;
+  onDeleteCommunity: (id: string) => Promise<void>;
   allUsers: UserProfile[];
   onApproveUser: (userId: string) => void;
   onRejectUser: (userId: string, reason: string) => void;
   onToggleUserStatus: (userId: string, newStatus: 'approved' | 'suspended') => void;
+  onChangeUserRole: (userId: string, newRole: UserRole) => void;
+  onDeleteUser: (userId: string) => void;
+  onCreateUser: (userData: {
+    name: string;
+    email: string;
+    employeeId: string;
+    role: UserRole;
+    roleTitle?: string;
+    campusId?: string;
+    password?: string;
+  }) => Promise<void>;
   locations: CampusLocation[];
-  onAddLocation: (name: string, zone: string, description: string) => void;
+  onAddLocation: (communityId: string, name: string, zone: string, description: string, isPopular?: boolean) => Promise<void>;
+  onUpdateLocation: (communityId: string, locId: string, updates: Partial<CampusLocation>) => Promise<void>;
+  onDeleteLocation: (communityId: string, locId: string) => Promise<void>;
   auditLogs: AuditLog[];
   onSwitchToApprovedUser: () => void;
   resetRequests?: PasswordResetRequest[];
@@ -33,13 +58,23 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
-  community,
+  communities,
+  activeCommunity,
+  onSelectCommunity,
+  onCreateCommunity,
+  onUpdateCommunity,
+  onDeleteCommunity,
   allUsers,
   onApproveUser,
   onRejectUser,
   onToggleUserStatus,
+  onChangeUserRole,
+  onDeleteUser,
+  onCreateUser,
   locations,
   onAddLocation,
+  onUpdateLocation,
+  onDeleteLocation,
   auditLogs,
   onSwitchToApprovedUser,
   resetRequests = [],
@@ -48,12 +83,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = React.useState<'pending' | 'reset_requests' | 'members' | 'locations' | 'audit'>('pending');
   const [searchQuery, setSearchQuery] = React.useState('');
   
-  // Location form state
-  const [showLocationForm, setShowLocationForm] = React.useState(false);
-  const [newLocName, setNewLocName] = React.useState('');
-  const [newLocZone, setNewLocZone] = React.useState('Central Spine');
-  const [newLocDesc, setNewLocDesc] = React.useState('');
+  // Selected campus inside the Locations/Campus tab
+  const [selectedCampusId, setSelectedCampusId] = React.useState<string>(activeCommunity.id);
 
+  const currentViewingCommunity = communities.find((c) => c.id === selectedCampusId) || activeCommunity;
+  const currentViewingLocations = currentViewingCommunity.locations || [];
+
+  // Modals state
+  const [showAddCampusModal, setShowAddCampusModal] = React.useState(false);
+  const [editingCampus, setEditingCampus] = React.useState<Community | null>(null);
+  
+  const [showAddSpotModal, setShowAddSpotModal] = React.useState(false);
+  const [editingSpot, setEditingSpot] = React.useState<CampusLocation | null>(null);
+
+  const [showAddUserModal, setShowAddUserModal] = React.useState(false);
+  const [rejectingUserId, setRejectingUserId] = React.useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = React.useState('Does not meet campus verification criteria');
+
+  // Form inputs for Campus
+  const [campusName, setCampusName] = React.useState('');
+  const [campusCity, setCampusCity] = React.useState('Chennai');
+  const [campusDesc, setCampusDesc] = React.useState('');
+
+  // Form inputs for Spot
+  const [spotName, setSpotName] = React.useState('');
+  const [spotZone, setSpotZone] = React.useState('Central Spine');
+  const [spotDesc, setSpotDesc] = React.useState('');
+  const [spotIsPopular, setSpotIsPopular] = React.useState(false);
+
+  // Form inputs for New User
+  const [newUserName, setNewUserName] = React.useState('');
+  const [newUserEmail, setNewUserEmail] = React.useState('');
+  const [newUserEmpId, setNewUserEmpId] = React.useState('');
+  const [newUserRole, setNewUserRole] = React.useState<UserRole>('user');
+  const [newUserRoleTitle, setNewUserRoleTitle] = React.useState('Software Engineer');
+  const [newUserCampusId, setNewUserCampusId] = React.useState(activeCommunity.id);
+  const [newUserPassword, setNewUserPassword] = React.useState('');
+
+  // Filtering
   const pendingUsers = allUsers.filter((u) => u.status === 'pending_approval');
   const pendingResets = resetRequests.filter((r) => r.status === 'pending');
   const filteredMembers = allUsers.filter(
@@ -64,117 +131,265 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       u.roleTitle.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAddLocationSubmit = (e: React.FormEvent) => {
+  // --- Handlers for Campus ---
+  const handleOpenAddCampus = () => {
+    setCampusName('');
+    setCampusCity('Chennai');
+    setCampusDesc('');
+    setShowAddCampusModal(true);
+  };
+
+  const handleOpenEditCampus = (comm: Community) => {
+    setEditingCampus(comm);
+    setCampusName(comm.name);
+    setCampusCity(comm.city);
+    setCampusDesc(comm.description || '');
+  };
+
+  const handleSaveCampus = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLocName.trim()) return;
-    onAddLocation(newLocName.trim(), newLocZone, newLocDesc.trim());
-    setNewLocName('');
-    setNewLocDesc('');
-    setShowLocationForm(false);
+    if (!campusName.trim() || !campusCity.trim()) return;
+
+    if (editingCampus) {
+      await onUpdateCommunity(editingCampus.id, {
+        name: campusName.trim(),
+        city: campusCity.trim(),
+        description: campusDesc.trim(),
+      });
+      setEditingCampus(null);
+    } else {
+      await onCreateCommunity({
+        name: campusName.trim(),
+        city: campusCity.trim(),
+        description: campusDesc.trim(),
+      });
+      setShowAddCampusModal(false);
+    }
+  };
+
+  const handleDeleteCampusClick = async (comm: Community) => {
+    if (communities.length <= 1) {
+      alert('Cannot delete the only campus. At least one workplace campus must exist.');
+      return;
+    }
+    if (confirm(`Are you sure you want to delete campus "${comm.name}"? All spots under this campus will also be removed.`)) {
+      await onDeleteCommunity(comm.id);
+      const remaining = communities.filter((c) => c.id !== comm.id);
+      if (remaining.length > 0) {
+        setSelectedCampusId(remaining[0].id);
+        onSelectCommunity(remaining[0]);
+      }
+    }
+  };
+
+  // --- Handlers for Spots ---
+  const handleOpenAddSpot = () => {
+    setSpotName('');
+    setSpotZone('Central Spine');
+    setSpotDesc('');
+    setSpotIsPopular(false);
+    setShowAddSpotModal(true);
+  };
+
+  const handleOpenEditSpot = (loc: CampusLocation) => {
+    setEditingSpot(loc);
+    setSpotName(loc.name);
+    setSpotZone(loc.zone);
+    setSpotDesc(loc.description || '');
+    setSpotIsPopular(Boolean(loc.isPopular));
+  };
+
+  const handleSaveSpot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!spotName.trim() || !spotZone.trim()) return;
+
+    if (editingSpot) {
+      await onUpdateLocation(currentViewingCommunity.id, editingSpot.id, {
+        name: spotName.trim(),
+        zone: spotZone.trim(),
+        description: spotDesc.trim(),
+        isPopular: spotIsPopular,
+      });
+      setEditingSpot(null);
+    } else {
+      await onAddLocation(
+        currentViewingCommunity.id,
+        spotName.trim(),
+        spotZone.trim(),
+        spotDesc.trim(),
+        spotIsPopular
+      );
+      setShowAddSpotModal(false);
+    }
+  };
+
+  const handleDeleteSpotClick = async (loc: CampusLocation) => {
+    if (confirm(`Are you sure you want to delete spot "${loc.name}"?`)) {
+      await onDeleteLocation(currentViewingCommunity.id, loc.id);
+    }
+  };
+
+  // --- Handlers for Users ---
+  const handleSaveNewUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserEmpId.trim()) return;
+
+    await onCreateUser({
+      name: newUserName.trim(),
+      email: newUserEmail.trim(),
+      employeeId: newUserEmpId.trim().toUpperCase(),
+      role: newUserRole,
+      roleTitle: newUserRoleTitle.trim(),
+      campusId: newUserCampusId,
+      password: newUserPassword.trim() || 'Buddy@12345',
+    });
+
+    setShowAddUserModal(false);
+    setNewUserName('');
+    setNewUserEmail('');
+    setNewUserEmpId('');
+    setNewUserPassword('');
+  };
+
+  const handleConfirmReject = () => {
+    if (rejectingUserId) {
+      onRejectUser(rejectingUserId, rejectionReason);
+      setRejectingUserId(null);
+      setRejectionReason('Does not meet campus verification criteria');
+    }
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-      {/* Admin Header with Metrics */}
-      <div className="rounded-3xl border border-stone-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-colors">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
+      {/* Top Banner & Stats */}
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition-colors">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                <ShieldCheck className="h-4 w-4" />
-              </span>
-              <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
-                Campus Admin Console
-              </span>
+            <div className="inline-flex items-center gap-2 rounded-2xl bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-900 dark:bg-indigo-950 dark:text-indigo-300 mb-2">
+              <ShieldCheck className="h-4 w-4" />
+              <span>Campus Admin Console</span>
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-              {community.name} Moderation
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+              {activeCommunity.name} Moderation
             </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Manual verification queue, member management, {community.name} spots, and security logs.
+            <p className="mt-1 text-xs text-slate-500">
+              Campus administration, member verification, multi-campus spots, and security logs.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2">
             <button
               onClick={onSwitchToApprovedUser}
-              className="flex items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
-              <span>Back to Break Directory</span>
+              Back to Break Directory
             </button>
           </div>
         </div>
 
-        {/* Metric Cards Strip */}
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
-          <div className="rounded-2xl bg-amber-50/70 p-4 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/50">
+        {/* Metric Cards Grid */}
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div 
+            onClick={() => setActiveTab('pending')}
+            className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+              activeTab === 'pending'
+                ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                : 'border-stone-100 bg-stone-50/50 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800/40'
+            }`}
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-900 dark:text-amber-300">Pending Approvals</span>
-              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Pending Approvals</span>
+              <Clock className="h-4 w-4 text-amber-500" />
             </div>
-            <div className="mt-2 text-3xl font-extrabold text-amber-700 dark:text-amber-400 font-mono-numbers">
+            <div className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400">
               {pendingUsers.length}
             </div>
           </div>
 
-          <div className="rounded-2xl bg-orange-50/70 p-4 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-900/50">
+          <div 
+            onClick={() => setActiveTab('reset_requests')}
+            className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+              activeTab === 'reset_requests'
+                ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/20 shadow-xs'
+                : 'border-stone-100 bg-stone-50/50 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800/40'
+            }`}
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-orange-900 dark:text-orange-300">Password Resets</span>
-              <KeyRound className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Password Resets</span>
+              <KeyRound className="h-4 w-4 text-orange-500" />
             </div>
-            <div className="mt-2 text-3xl font-extrabold text-orange-700 dark:text-orange-400 font-mono-numbers">
+            <div className="mt-2 text-2xl font-black text-orange-600 dark:text-orange-400">
               {pendingResets.length}
             </div>
           </div>
 
-          <div className="rounded-2xl bg-emerald-50/70 p-4 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/50">
+          <div 
+            onClick={() => setActiveTab('members')}
+            className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+              activeTab === 'members'
+                ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-xs'
+                : 'border-stone-100 bg-stone-50/50 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800/40'
+            }`}
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-300">Approved Members</span>
-              <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">All Members</span>
+              <Users className="h-4 w-4 text-emerald-500" />
             </div>
-            <div className="mt-2 text-3xl font-extrabold text-emerald-700 dark:text-emerald-400 font-mono-numbers">
+            <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">
               {allUsers.filter((u) => u.status === 'approved').length}
             </div>
           </div>
 
-          <div className="rounded-2xl bg-blue-50/70 p-4 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/50">
+          <div 
+            onClick={() => setActiveTab('locations')}
+            className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+              activeTab === 'locations'
+                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-xs'
+                : 'border-stone-100 bg-stone-50/50 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800/40'
+            }`}
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-blue-900 dark:text-blue-300">Campus Spots</span>
-              <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Campuses & Spots</span>
+              <MapPin className="h-4 w-4 text-indigo-500" />
             </div>
-            <div className="mt-2 text-3xl font-extrabold text-blue-700 dark:text-blue-400 font-mono-numbers">
-              {locations.length}
+            <div className="mt-2 text-2xl font-black text-indigo-600 dark:text-indigo-400">
+              {communities.reduce((acc, c) => acc + (c.locations?.length || 0), 0)}
             </div>
           </div>
 
-          <div className="rounded-2xl bg-purple-50/70 p-4 dark:bg-purple-950/30 border border-purple-200/60 dark:border-purple-900/50">
+          <div 
+            onClick={() => setActiveTab('audit')}
+            className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+              activeTab === 'audit'
+                ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20 shadow-xs'
+                : 'border-stone-100 bg-stone-50/50 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800/40'
+            }`}
+          >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-purple-900 dark:text-purple-300">Audit Actions</span>
-              <History className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Audit Actions</span>
+              <History className="h-4 w-4 text-purple-500" />
             </div>
-            <div className="mt-2 text-3xl font-extrabold text-purple-700 dark:text-purple-400 font-mono-numbers">
+            <div className="mt-2 text-2xl font-black text-purple-600 dark:text-purple-400">
               {auditLogs.length}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Admin Tab Navigation */}
-      <div className="flex items-center gap-2 border-b border-stone-200 dark:border-slate-800 pb-3 overflow-x-auto no-scrollbar">
+      {/* Tabs Navigation Bar */}
+      <div className="flex gap-2 border-b border-stone-200 dark:border-slate-800 pb-2 overflow-x-auto scrollbar-none">
         <button
           onClick={() => setActiveTab('pending')}
-          className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'pending'
               ? 'bg-amber-500 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
         >
           <Clock className="h-4 w-4" />
           <span>Pending Approvals</span>
           {pendingUsers.length > 0 && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-              activeTab === 'pending' ? 'bg-white text-amber-700' : 'bg-rose-500 text-white'
-            }`}>
+            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">
               {pendingUsers.length}
             </span>
           )}
@@ -182,18 +397,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('reset_requests')}
-          className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'reset_requests'
               ? 'bg-orange-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
         >
           <KeyRound className="h-4 w-4" />
           <span>Password Resets</span>
           {pendingResets.length > 0 && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-              activeTab === 'reset_requests' ? 'bg-white text-orange-700' : 'bg-rose-500 text-white'
-            }`}>
+            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">
               {pendingResets.length}
             </span>
           )}
@@ -201,10 +414,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('members')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'members'
-              ? 'bg-indigo-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
         >
           <Users className="h-4 w-4" />
@@ -213,22 +426,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <button
           onClick={() => setActiveTab('locations')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'locations'
               ? 'bg-indigo-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
         >
           <MapPin className="h-4 w-4" />
-          <span>Campus Spots ({locations.length})</span>
+          <span>Campuses & Spots ({communities.length} Campuses)</span>
         </button>
 
         <button
           onClick={() => setActiveTab('audit')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'audit'
-              ? 'bg-indigo-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              ? 'bg-purple-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
         >
           <History className="h-4 w-4" />
@@ -236,128 +449,120 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
       </div>
 
-      {/* Tab 1: Pending Approvals Queue */}
+      {/* TAB 1: PENDING APPROVALS */}
       {activeTab === 'pending' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Applicants Awaiting Manual Review ({pendingUsers.length})
-            </h2>
-            <span className="text-xs text-slate-500">
-              Only verified campus members can access the break directory.
-            </span>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Applicants Awaiting Manual Review ({pendingUsers.length})
+              </h2>
+              <span className="text-xs text-slate-500">
+                Only verified campus members can access the break directory.
+              </span>
+            </div>
           </div>
 
           {pendingUsers.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                <CheckCircle2 className="h-6 w-6" />
-              </div>
-              <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">All Caught Up!</h3>
-              <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+              <h3 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">All Caught Up!</h3>
+              <p className="mt-1 text-xs text-slate-500">
                 There are no pending registrations waiting for review. New applicants will appear here immediately upon sign up.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {pendingUsers.map((applicant) => (
-                <div
-                  key={applicant.id}
-                  className="flex flex-col justify-between rounded-3xl border border-stone-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${applicant.avatarBgColor} text-base font-bold text-white shadow-xs`}>
-                          {applicant.name.charAt(0)}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                            {applicant.name}
-                          </h3>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {applicant.roleTitle}
+              {pendingUsers.map((applicant) => {
+                const targetCampus = communities.find((c) => c.id === applicant.campusId) || activeCommunity;
+                return (
+                  <div
+                    key={applicant.id}
+                    className="flex flex-col justify-between rounded-3xl border border-stone-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-amber-300"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${applicant.avatarBgColor} text-base font-bold text-white shadow-xs`}>
+                            {applicant.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                              {applicant.name}
+                            </h3>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              {applicant.roleTitle}
+                            </div>
                           </div>
                         </div>
+
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          Pending
+                        </span>
                       </div>
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                        Pending
-                      </span>
+
+                      <div className="mt-4 space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Email ID:</span>
+                          <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{applicant.email}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Employee ID:</span>
+                          <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400">{applicant.employeeId || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Target Campus:</span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">{targetCampus.name}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Dietary & Battery:</span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">{applicant.dietary} · {applicant.socialBattery}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Email ID:</span>
-                        <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{applicant.email}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Employee ID:</span>
-                        <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-400">{applicant.employeeId || 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Target Campus:</span>
-                        <span className="font-medium text-slate-800 dark:text-slate-200">{community.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Dietary & Battery:</span>
-                        <span className="font-medium text-slate-800 dark:text-slate-200">{applicant.dietary} · {applicant.socialBattery}</span>
-                      </div>
+                    <div className="mt-5 flex items-center gap-2 border-t border-stone-100 dark:border-slate-800 pt-4">
+                      <button
+                        onClick={() => onApproveUser(applicant.id)}
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>Approve Member</span>
+                      </button>
+                      <button
+                        onClick={() => setRejectingUserId(applicant.id)}
+                        className="flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 transition-colors"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        <span>Reject</span>
+                      </button>
                     </div>
-
-                    {applicant.bio && (
-                      <div className="rounded-xl bg-stone-50 p-2.5 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 italic">
-                        "{applicant.bio}"
-                      </div>
-                    )}
                   </div>
-
-                  {/* Action Buttons */}
-                  <div className="mt-6 flex items-center gap-3 pt-3 border-t border-stone-100 dark:border-slate-800">
-                    <button
-                      onClick={() => onApproveUser(applicant.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 shadow-sm transition-colors"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>Approve Member</span>
-                    </button>
-                    
-                    <button
-                      onClick={() => onRejectUser(applicant.id, 'Incomplete verification credentials')}
-                      className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 px-4 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-slate-800 dark:hover:bg-rose-950/40 transition-colors"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      <span>Reject</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* Tab: Password Reset Requests Queue */}
+      {/* TAB 2: PASSWORD RESETS */}
       {activeTab === 'reset_requests' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Password Reset Requests ({pendingResets.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                User raised request. Once admin approves, user can log in without password and is prompted for an immediate password change.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              Password Reset Requests ({pendingResets.length})
+            </h2>
+            <p className="text-xs text-slate-500">
+              Users raise a request with Email ID and Employee ID. Once approved, they can log in without password to set a fresh one.
+            </p>
           </div>
 
           {pendingResets.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                <CheckCircle2 className="h-6 w-6" />
-              </div>
-              <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">No Pending Reset Requests</h3>
-              <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-                All password reset requests have been reviewed. When a user submits a forgot-password request, it will appear here immediately for review.
+              <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+              <h3 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">No Reset Requests</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                All password reset requests have been reviewed and approved.
               </p>
             </div>
           ) : (
@@ -365,58 +570,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {pendingResets.map((reqItem) => (
                 <div
                   key={reqItem.id}
-                  className="flex flex-col justify-between rounded-3xl border border-stone-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                  className="rounded-3xl border border-stone-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-orange-300"
                 >
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-600 text-base font-bold text-white shadow-xs">
-                          {reqItem.userName ? reqItem.userName.charAt(0) : 'U'}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                            {reqItem.userName}
-                          </h3>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Employee ID: <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{reqItem.employeeId}</span>
-                          </div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-400">
+                        <KeyRound className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                          {reqItem.userName}
+                        </h3>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Employee ID: <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{reqItem.employeeId}</span>
                         </div>
                       </div>
-                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                        Waiting approval by admin
+                    </div>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      Waiting approval by admin
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Email ID:</span>
+                      <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{reqItem.email}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Employee ID:</span>
+                      <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">{reqItem.employeeId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Requested At:</span>
+                      <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                        {new Date(reqItem.requestedAt).toLocaleString()}
                       </span>
-                    </div>
-
-                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 border-t border-stone-100 dark:border-slate-800 pt-3">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Email ID:</span>
-                        <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">{reqItem.email}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Employee ID:</span>
-                        <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">{reqItem.employeeId}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Requested At:</span>
-                        <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                          {new Date(reqItem.requestedAt).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl bg-orange-50/80 p-3 text-[11px] text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border border-orange-200/60 dark:border-orange-900/40">
-                      ℹ️ Approving will allow <strong>{reqItem.userName}</strong> to sign in once without their old password and immediately sets up a new password.
                     </div>
                   </div>
 
-                  {/* Action Button */}
-                  <div className="mt-6 pt-3 border-t border-stone-100 dark:border-slate-800">
+                  <div className="mt-5 border-t border-stone-100 dark:border-slate-800 pt-4">
                     <button
                       onClick={() => onApproveResetRequest && onApproveResetRequest(reqItem.id)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 py-2.5 text-xs font-semibold text-white hover:from-orange-700 hover:to-amber-700 shadow-sm transition-all"
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-orange-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-orange-700 transition-colors"
                     >
-                      <KeyRound className="h-4 w-4" />
-                      <span>Approve Password Reset</span>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Approve Password Reset (Enable 1-Time Entry)</span>
                     </button>
                   </div>
                 </div>
@@ -426,106 +624,176 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Member Directory & Moderation */}
+      {/* TAB 3: MEMBER & CAMPUS ADMIN DIRECTORY */}
       {activeTab === 'members' && (
         <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Campus Member Directory ({allUsers.length})
-            </h2>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search by name, role, email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-stone-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-              />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Campus Member & Administrator Directory ({allUsers.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Manage roles, promote/revoke campus admins, suspend accounts, or add new verified colleagues.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search members..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="rounded-xl border border-stone-200 bg-white py-1.5 pl-8 pr-3 text-xs dark:border-slate-800 dark:bg-slate-800 dark:text-white w-48 sm:w-60"
+                />
+              </div>
+
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Member / Admin</span>
+              </button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 border-b border-stone-200 dark:bg-slate-800/60 dark:border-slate-800 text-slate-500">
-                  <tr>
-                    <th className="py-3 px-4 font-semibold">Colleague</th>
-                    <th className="py-3 px-4 font-semibold">Email ID</th>
-                    <th className="py-3 px-4 font-semibold">Status</th>
-                    <th className="py-3 px-4 font-semibold">Role</th>
-                    <th className="py-3 px-4 font-semibold text-right">Moderation Action</th>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-stone-100 bg-stone-50/50 text-[11px] font-bold text-slate-400 uppercase tracking-wider dark:border-slate-800 dark:bg-slate-800/40">
+                    <th className="py-3 px-4">Colleague</th>
+                    <th className="py-3 px-4">Email ID</th>
+                    <th className="py-3 px-4">Campus</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Admin Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                  {filteredMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-stone-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${member.avatarBgColor} text-xs font-bold text-white`}>
-                            {member.name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-slate-900 dark:text-white">{member.name}</div>
-                            <div className="text-[11px] text-slate-500">
-                              {member.roleTitle} {member.employeeId ? `· Emp ID: ${member.employeeId}` : ''}
+                <tbody className="divide-y divide-stone-100 text-xs dark:divide-slate-800">
+                  {filteredMembers.map((member) => {
+                    const memberCampus = communities.find((c) => c.id === member.campusId) || activeCommunity;
+                    const isMasterAdmin = member.email === 'admin@middaybuddy.com';
+                    const isCampusAdmin = member.role === 'community_admin' || member.role === 'platform_admin';
+
+                    return (
+                      <tr key={member.id} className="hover:bg-stone-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${member.avatarBgColor} text-xs font-bold text-white`}>
+                              {member.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                {member.name}
+                                {isMasterAdmin && (
+                                  <span className="rounded bg-indigo-100 px-1.5 py-0.2 text-[9px] font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                                    Master
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {member.roleTitle} {member.employeeId ? `· Emp ID: ${member.employeeId}` : ''}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">
-                        {member.email}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {member.status === 'approved' && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                            Approved
-                          </span>
-                        )}
-                        {member.status === 'pending_approval' && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                            Pending Review
-                          </span>
-                        )}
-                        {member.status === 'suspended' && (
-                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
-                            Suspended
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 capitalize">
-                          {member.role === 'community_admin' ? 'Administrator' : 'Employee'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        {member.status === 'approved' && member.role !== 'community_admin' && (
-                          <button
-                            onClick={() => onToggleUserStatus(member.id, 'suspended')}
-                            className="text-xs font-semibold text-rose-600 hover:text-rose-700 transition-colors"
-                          >
-                            Suspend Member
-                          </button>
-                        )}
-                        {member.status === 'suspended' && (
-                          <button
-                            onClick={() => onToggleUserStatus(member.id, 'approved')}
-                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
-                          >
-                            Reinstate Member
-                          </button>
-                        )}
-                        {member.status === 'pending_approval' && (
-                          <button
-                            onClick={() => onApproveUser(member.id)}
-                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
-                          >
-                            Approve Now
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+
+                        <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">
+                          {member.email}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300">
+                          {memberCampus.name}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {isCampusAdmin ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                              <ShieldCheck className="h-3 w-3" />
+                              Campus Admin
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              Member
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {member.status === 'approved' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                              Approved
+                            </span>
+                          )}
+                          {member.status === 'suspended' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                              Suspended
+                            </span>
+                          )}
+                          {member.status === 'pending_approval' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                              Pending
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Role Toggle: Make Admin / Revoke Admin */}
+                            {!isMasterAdmin && (
+                              <button
+                                onClick={() => onChangeUserRole(member.id, isCampusAdmin ? 'user' : 'community_admin')}
+                                title={isCampusAdmin ? 'Revoke Admin Privileges' : 'Promote to Campus Administrator'}
+                                className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition-colors ${
+                                  isCampusAdmin
+                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/20 dark:text-indigo-300'
+                                    : 'border-stone-200 bg-stone-50 text-slate-700 hover:bg-stone-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                                }`}
+                              >
+                                {isCampusAdmin ? 'Revoke Admin' : 'Make Admin'}
+                              </button>
+                            )}
+
+                            {/* Status toggle */}
+                            {member.status === 'approved' && !isMasterAdmin && (
+                              <button
+                                onClick={() => onToggleUserStatus(member.id, 'suspended')}
+                                className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 transition-colors"
+                              >
+                                Suspend
+                              </button>
+                            )}
+                            {member.status === 'suspended' && (
+                              <button
+                                onClick={() => onToggleUserStatus(member.id, 'approved')}
+                                className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors"
+                              >
+                                Reinstate
+                              </button>
+                            )}
+
+                            {/* Delete User */}
+                            {!isMasterAdmin && (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Are you sure you want to permanently delete user "${member.name}"?`)) {
+                                    onDeleteUser(member.id);
+                                  }
+                                }}
+                                title="Delete User Permanently"
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -533,67 +801,365 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Spine Landmarks & Meetup Spots */}
+      {/* TAB 4: CAMPUSES & SPOTS MANAGEMENT */}
       {activeTab === 'locations' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Designated Campus & Cafeteria Spots ({locations.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Official landmarks for quick meeting and tea/lunch coordination.
-              </p>
+        <div className="space-y-6">
+          {/* Campus Selector and Campus CRUD */}
+          <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  Multi-Campus Architecture
+                </span>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                  Workplace Campuses ({communities.length})
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Select a campus to inspect and manage all cafeteria, tea, and outdoor spots underneath it.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenAddCampus}
+                  className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add New Campus</span>
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={() => setShowLocationForm(!showLocationForm)}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add New Spot</span>
-            </button>
+            {/* Campus Selector Pills */}
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {communities.map((comm) => {
+                const isSelected = comm.id === selectedCampusId;
+                return (
+                  <button
+                    key={comm.id}
+                    onClick={() => {
+                      setSelectedCampusId(comm.id);
+                      onSelectCommunity(comm);
+                    }}
+                    className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition-all shrink-0 border ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:border-indigo-500 dark:text-indigo-200 shadow-xs'
+                        : 'border-stone-200 bg-white text-slate-700 hover:bg-stone-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    <Building2 className={`h-4 w-4 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                    <span>{comm.name}</span>
+                    <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+                      isSelected ? 'bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-100' : 'bg-stone-100 dark:bg-slate-700 text-slate-500'
+                    }`}>
+                      {comm.locations?.length || 0} spots
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Selected Campus Detail Card & Edit/Delete Controls */}
+            <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    {currentViewingCommunity.name}
+                  </h3>
+                  <span className="rounded-md bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                    {currentViewingCommunity.city}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {currentViewingCommunity.description || 'No campus description added.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => handleOpenEditCampus(currentViewingCommunity)}
+                  className="flex items-center gap-1 rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition-colors"
+                >
+                  <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Edit Campus</span>
+                </button>
+
+                <button
+                  onClick={() => handleDeleteCampusClick(currentViewingCommunity)}
+                  className="flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Campus</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Add Location Form Drawer */}
-          {showLocationForm && (
-            <form
-              onSubmit={handleAddLocationSubmit}
-              className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4"
-            >
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Register New Campus Landmark</h3>
-              
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Spot Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Spine South Coffee Kiosk"
-                    value={newLocName}
-                    onChange={(e) => setNewLocName(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200 p-2.5 text-xs dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
+          {/* Spots Under This Campus */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-orange-500" />
+                  Spots in {currentViewingCommunity.name} ({currentViewingLocations.length})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Designated cafeteria spots, kiosks, and outdoor seating specific to this campus.
+                </p>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Zone / Wing
-                  </label>
-                  <select
-                    value={newLocZone}
-                    onChange={(e) => setNewLocZone(e.target.value)}
-                    className="w-full rounded-xl border border-stone-200 p-2.5 text-xs dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+              <button
+                onClick={handleOpenAddSpot}
+                className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white hover:bg-orange-700 shadow-sm transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Spot to this Campus</span>
+              </button>
+            </div>
+
+            {currentViewingLocations.length === 0 ? (
+              <div className="rounded-3xl border border-stone-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
+                <MapPin className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-700" />
+                <h4 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">No Spots Registered Yet</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Add meeting spots, cafeteria tables, or tea kiosks for {currentViewingCommunity.name}.
+                </p>
+                <button
+                  onClick={handleOpenAddSpot}
+                  className="mt-4 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white hover:bg-orange-700"
+                >
+                  Add First Spot
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {currentViewingLocations.map((loc) => (
+                  <div
+                    key={loc.id}
+                    className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-orange-300"
                   >
-                    <option value="Central Spine">Central Spine</option>
-                    <option value="Food Court 1">Food Court 1</option>
-                    <option value="Food Court 2">Food Court 2</option>
-                    <option value="Outdoor Greens">Outdoor Greens</option>
-                    <option value="Kiosks">Kiosks</option>
-                  </select>
-                </div>
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300">
+                            <MapPin className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">{loc.name}</h4>
+                            <span className="text-[11px] font-medium text-slate-500">{loc.zone}</span>
+                          </div>
+                        </div>
+
+                        {loc.isPopular && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                            High Traffic
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-3 text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
+                        {loc.description || 'No additional landmark clue provided.'}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-slate-800 pt-3">
+                      <button
+                        onClick={() => handleOpenEditSpot(loc)}
+                        className="flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-stone-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteSpotClick(loc)}
+                        className="flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 transition-colors"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: AUDIT LOG */}
+      {activeTab === 'audit' && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              Security & Moderation Audit Trail ({auditLogs.length})
+            </h2>
+            <p className="text-xs text-slate-500">
+              Immutable historical logs of all administrative approvals, campus edits, and account modifications.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            {auditLogs.length === 0 ? (
+              <div className="p-12 text-center text-xs text-slate-400">
+                No audit records logged yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-stone-100 dark:divide-slate-800">
+                {auditLogs.map((log) => (
+                  <div key={log.id} className="p-4 flex items-center justify-between text-xs hover:bg-stone-50/50 dark:hover:bg-slate-800/30">
+                    <div className="space-y-1">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <span className="rounded bg-stone-100 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                          {log.action}
+                        </span>
+                        <span>{log.details}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Admin: <span className="font-medium text-slate-600 dark:text-slate-300">{log.adminName}</span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD / EDIT CAMPUS */}
+      {(showAddCampusModal || editingCampus) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-slate-800">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                {editingCampus ? 'Edit Workplace Campus' : 'Register New Campus'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddCampusModal(false);
+                  setEditingCampus(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCampus} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Campus Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. TCS Siruseri Campus"
+                  value={campusName}
+                  onChange={(e) => setCampusName(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  City *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chennai, Bengaluru, Hyderabad"
+                  value={campusCity}
+                  onChange={(e) => setCampusCity(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Campus Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. 70-acre technology campus with central food court and outdoor lawns..."
+                  value={campusDesc}
+                  onChange={(e) => setCampusDesc(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddCampusModal(false);
+                    setEditingCampus(null);
+                  }}
+                  className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition-colors"
+                >
+                  {editingCampus ? 'Save Changes' : 'Create Campus'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD / EDIT CAMPUS SPOT */}
+      {(showAddSpotModal || editingSpot) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-slate-800">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                {editingSpot ? 'Edit Campus Spot' : `Add Spot to ${currentViewingCommunity.name}`}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddSpotModal(false);
+                  setEditingSpot(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSpot} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Spot / Landmark Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Spine Chai Point (Near Core)"
+                  value={spotName}
+                  onChange={(e) => setSpotName(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Zone / Wing *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Central Spine, Food Court 1, Lawn Area, Ground Floor"
+                  value={spotZone}
+                  onChange={(e) => setSpotZone(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
               </div>
 
               <div>
@@ -602,103 +1168,238 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Near the main entrance glass door, wooden benches available"
-                  value={newLocDesc}
-                  onChange={(e) => setNewLocDesc(e.target.value)}
-                  className="w-full rounded-xl border border-stone-200 p-2.5 text-xs dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  placeholder="e.g. Near glass doors by West Wing elevators"
+                  value={spotDesc}
+                  onChange={(e) => setSpotDesc(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
-              <div className="flex items-center gap-2 justify-end pt-2">
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="spotPopularCheck"
+                  checked={spotIsPopular}
+                  onChange={(e) => setSpotIsPopular(e.target.checked)}
+                  className="rounded border-stone-300 text-orange-600 focus:ring-orange-500"
+                />
+                <label htmlFor="spotPopularCheck" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Mark as High Traffic Spot (Shown with badge)
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowLocationForm(false)}
+                  onClick={() => {
+                    setShowAddSpotModal(false);
+                    setEditingSpot(null);
+                  }}
                   className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                  className="rounded-xl bg-orange-600 px-5 py-2 text-xs font-bold text-white hover:bg-orange-700 transition-colors"
                 >
-                  Save Landmark
+                  {editingSpot ? 'Save Spot' : 'Register Spot'}
                 </button>
               </div>
             </form>
-          )}
-
-          {/* Locations Grid */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {locations.map((loc) => (
-              <div
-                key={loc.id}
-                className="rounded-2xl border border-stone-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300">
-                      <MapPin className="h-4 w-4" />
-                    </span>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900 dark:text-white">{loc.name}</h4>
-                      <span className="text-[11px] text-slate-500 font-medium">{loc.zone}</span>
-                    </div>
-                  </div>
-                  {loc.isPopular && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                      High Traffic
-                    </span>
-                  )}
-                </div>
-                <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">
-                  {loc.description}
-                </p>
-              </div>
-            ))}
           </div>
         </div>
       )}
 
-      {/* Tab 4: Security Audit Trail */}
-      {activeTab === 'audit' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Immutable Security Audit Trail ({auditLogs.length} Events)
-            </h2>
-            <span className="text-xs text-slate-500">
-              Tracks all administrative approval, rejection, and suspension decisions.
-            </span>
-          </div>
+      {/* MODAL: ADD MEMBER / CAMPUS ADMIN */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-slate-800">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="h-5 w-5 text-emerald-600" />
+                Add Member or Administrator
+              </h3>
+              <button
+                onClick={() => setShowAddUserModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-          <div className="rounded-3xl border border-stone-200 bg-white overflow-hidden shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="divide-y divide-stone-100 dark:divide-slate-800 text-xs">
-              {auditLogs.map((log) => (
-                <div key={log.id} className="p-4 flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                      <History className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {log.adminName}
-                        </span>
-                        <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          {log.action}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-slate-600 dark:text-slate-400">
-                        {log.details}
-                      </p>
-                    </div>
-                  </div>
+            <form onSubmit={handleSaveNewUser} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sivasankar Raman"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
 
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Email ID *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="user@company.com"
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
                 </div>
-              ))}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Employee ID *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. EMP-1092"
+                    value={newUserEmpId}
+                    onChange={(e) => setNewUserEmpId(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs font-mono uppercase text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Access Role *
+                  </label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="user">Verified Member</option>
+                    <option value="community_admin">Campus Administrator</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Workplace Campus *
+                  </label>
+                  <select
+                    value={newUserCampusId}
+                    onChange={(e) => setNewUserCampusId(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  >
+                    {communities.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Designation / Title
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Software Engineer"
+                    value={newUserRoleTitle}
+                    onChange={(e) => setNewUserRoleTitle(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Initial Password
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Default: Buddy@12345"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-colors shadow-sm"
+                >
+                  Create & Verify Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REJECT REASON CONFIRMATION */}
+      {rejectingUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <AlertTriangle className="h-6 w-6 shrink-0" />
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Confirm Registration Rejection
+              </h3>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Rejecting will permanently decline this applicant and remove the request from the pending queue.
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Reason for Rejection
+              </label>
+              <select
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="Does not meet campus verification criteria">Does not meet campus verification criteria</option>
+                <option value="Invalid or unverified Employee ID">Invalid or unverified Employee ID</option>
+                <option value="Duplicate or conflicting registration details">Duplicate or conflicting registration details</option>
+                <option value="Not located in this campus network">Not located in this campus network</option>
+              </select>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectingUserId(null)}
+                className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-sm"
+              >
+                Confirm & Reject Request
+              </button>
             </div>
           </div>
         </div>

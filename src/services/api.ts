@@ -13,7 +13,8 @@ import {
   AppNotification, 
   CampusLocation,
   BreakType,
-  AuthResponse 
+  AuthResponse,
+  UserRole
 } from '../types';
 import { StorageService } from './storage';
 
@@ -435,6 +436,99 @@ export const ApiService = {
     return { success: true, location };
   },
 
+  async updateLocation(communityId: string, locId: string, location: Partial<CampusLocation>, admin: { id: string; name: string }): Promise<{ success: boolean; location: CampusLocation }> {
+    try {
+      const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations/${encodeURIComponent(locId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...location, adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    StorageService.updateLocationInCommunity(communityId, locId, location);
+    const comm = StorageService.getCommunities().find((c) => c.id === communityId);
+    const updated = comm?.locations.find((l) => l.id === locId) || (location as CampusLocation);
+    return { success: true, location: updated };
+  },
+
+  async deleteLocation(communityId: string, locId: string, admin: { id: string; name: string }): Promise<{ success: boolean; deletedLocationId: string }> {
+    try {
+      const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations/${encodeURIComponent(locId)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    StorageService.deleteLocationFromCommunity(communityId, locId);
+    return { success: true, deletedLocationId: locId };
+  },
+
+  async createCommunity(data: { name: string; city: string; description?: string }, admin: { id: string; name: string }): Promise<{ success: boolean; community: Community }> {
+    try {
+      const res = await fetch(`${API_BASE}/communities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    const newComm: Community = {
+      id: `comm_${Date.now()}`,
+      slug: data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: data.name.trim(),
+      city: data.city.trim(),
+      description: data.description?.trim() || '',
+      memberCount: 0,
+      activeBreaksCount: 0,
+      locations: [],
+    };
+    StorageService.addCommunity(newComm);
+    return { success: true, community: newComm };
+  },
+
+  async updateCommunity(id: string, data: { name: string; city: string; description?: string }, admin: { id: string; name: string }): Promise<{ success: boolean; community: Community }> {
+    try {
+      const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    StorageService.updateCommunity(id, data);
+    const comm = StorageService.getCommunities().find((c) => c.id === id);
+    return { success: true, community: comm! };
+  },
+
+  async deleteCommunity(id: string, admin: { id: string; name: string }): Promise<{ success: boolean; deletedCommunityId: string }> {
+    try {
+      const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    StorageService.deleteCommunity(id);
+    return { success: true, deletedCommunityId: id };
+  },
+
   // --- BREAK POSTS ---
   async getBreaks(params?: { communityId?: string; breakType?: string; zone?: string; activeNow?: boolean }): Promise<BreakPost[]> {
     try {
@@ -707,6 +801,131 @@ export const ApiService = {
     const updated = { ...user, ...updates };
     StorageService.updateUser(updated);
     return { success: true, user: updated };
+  },
+
+  async updateUserRole(userId: string, newRole: UserRole, admin: { id: string; name: string }): Promise<{ success: boolean; user: UserProfile; log: AuditLog }> {
+    try {
+      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole, adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    const user = StorageService.getUserById(userId);
+    if (!user) throw new Error('User not found');
+    user.role = newRole;
+    StorageService.updateUser(user);
+
+    const log: AuditLog = {
+      id: `log_${Date.now()}`,
+      adminId: admin.id,
+      adminName: admin.name,
+      action: 'CHANGE_ROLE' as any,
+      targetUserId: user.id,
+      targetUserName: user.name,
+      details: `${newRole === 'community_admin' ? 'Promoted to Campus Admin' : 'Revoked Campus Admin rights'} for ${user.name}`,
+      timestamp: new Date().toISOString(),
+    };
+    StorageService.addAuditLog(log);
+
+    return { success: true, user, log };
+  },
+
+  async deleteUser(userId: string, admin: { id: string; name: string }): Promise<{ success: boolean; deletedUserId: string; log: AuditLog }> {
+    try {
+      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    const user = StorageService.getUserById(userId);
+    const users = StorageService.getUsers().filter((u) => u.id !== userId);
+    StorageService.saveUsers(users);
+
+    const log: AuditLog = {
+      id: `log_${Date.now()}`,
+      adminId: admin.id,
+      adminName: admin.name,
+      action: 'DELETE_USER' as any,
+      targetUserId: userId,
+      targetUserName: user?.name || userId,
+      details: `Deleted user account for ${user?.name || userId}`,
+      timestamp: new Date().toISOString(),
+    };
+    StorageService.addAuditLog(log);
+
+    return { success: true, deletedUserId: userId, log };
+  },
+
+  async createUser(userData: {
+    name: string;
+    email: string;
+    employeeId: string;
+    role?: UserRole;
+    roleTitle?: string;
+    campusId?: string;
+    password?: string;
+  }, admin: { id: string; name: string }): Promise<{ success: boolean; user: UserProfile; log: AuditLog }> {
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...userData, status: 'approved', adminId: admin.id, adminName: admin.name }),
+      });
+      if (!isTransportFailure(res.status)) {
+        return await handleResponse(res);
+      }
+    } catch {}
+
+    const nowISO = new Date().toISOString();
+    const newUser: UserProfile = {
+      id: `usr_${Date.now()}`,
+      name: userData.name.trim(),
+      email: userData.email.trim().toLowerCase(),
+      employeeId: userData.employeeId.trim().toUpperCase(),
+      role: userData.role || 'user',
+      roleTitle: userData.roleTitle?.trim() || (userData.role === 'community_admin' ? 'Campus Administrator' : 'Software Engineer'),
+      campusId: userData.campusId || 'comm_siruseri',
+      status: 'approved',
+      avatarBgColor: userData.role === 'community_admin' ? 'bg-indigo-600' : 'bg-emerald-600',
+      avatarSeed: userData.name.trim(),
+      bio: `Colleague at ${userData.campusId || 'Workplace Campus'}.`,
+      icebreaker: 'Let us connect for chai and breaks!',
+      interests: ['Workplace Well-being', 'Technology'],
+      dietary: 'Any',
+      socialBattery: 'Balanced Banter',
+      registeredAt: nowISO,
+      approvedAt: nowISO,
+      password: userData.password || 'Buddy@12345',
+      mustChangePassword: false,
+      passwordResetApproved: false,
+    };
+
+    const currentUsers = StorageService.getUsers();
+    StorageService.saveUsers([newUser, ...currentUsers]);
+
+    const log: AuditLog = {
+      id: `log_${Date.now()}`,
+      adminId: admin.id,
+      adminName: admin.name,
+      action: 'CREATE_USER' as any,
+      targetUserId: newUser.id,
+      targetUserName: newUser.name,
+      details: `Directly registered ${newUser.role === 'community_admin' ? 'Campus Admin' : 'Member'} ${newUser.name}`,
+      timestamp: nowISO,
+    };
+    StorageService.addAuditLog(log);
+
+    return { success: true, user: newUser, log };
   },
 
   // --- CHAT CONVERSATIONS ---

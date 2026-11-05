@@ -145,6 +145,47 @@ export const StorageService = {
     this.saveCommunities(comms);
   },
 
+  updateLocationInCommunity(communityId: string, locId: string, updates: Partial<CampusLocation>): void {
+    const comms = this.getCommunities().map((c) => {
+      if (c.id === communityId) {
+        return {
+          ...c,
+          locations: c.locations.map((loc) => (loc.id === locId ? { ...loc, ...updates } : loc)),
+        };
+      }
+      return c;
+    });
+    this.saveCommunities(comms);
+  },
+
+  deleteLocationFromCommunity(communityId: string, locId: string): void {
+    const comms = this.getCommunities().map((c) => {
+      if (c.id === communityId) {
+        return {
+          ...c,
+          locations: c.locations.filter((loc) => loc.id !== locId),
+        };
+      }
+      return c;
+    });
+    this.saveCommunities(comms);
+  },
+
+  addCommunity(community: Community): void {
+    const comms = this.getCommunities();
+    this.saveCommunities([...comms, community]);
+  },
+
+  updateCommunity(communityId: string, updates: Partial<Community>): void {
+    const comms = this.getCommunities().map((c) => (c.id === communityId ? { ...c, ...updates } : c));
+    this.saveCommunities(comms);
+  },
+
+  deleteCommunity(communityId: string): void {
+    const comms = this.getCommunities().filter((c) => c.id !== communityId);
+    this.saveCommunities(comms);
+  },
+
   // --- BREAK POSTS ---
   getBreaks(): BreakPost[] {
     const breaks = readStorage<BreakPost[]>(KEYS.BREAKS, []);

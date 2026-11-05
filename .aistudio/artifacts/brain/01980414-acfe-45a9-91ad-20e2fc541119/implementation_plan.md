@@ -279,16 +279,19 @@ CREATE TABLE audit_logs (
 ---
 
 ## 6. Implementation Deliverables
-- [ ] **Dual-Role Navigation**: Seamless switching between Member view and Admin Portal for authorized administrators.
-- [ ] **Pending Approval Interceptor**: Protected routes and UI states preventing unapproved users from viewing live feeds or sending messages.
-- [ ] **Admin Approval Dashboard**:
-  - Live queue of pending applicants with 1-click **Approve** and **Reject**.
-  - Searchable member directory with **Suspend** / **Reinstate** controls.
-  - Campus spot manager for Central Spine landmarks.
-  - Audit trail viewer recording approval actions.
-- [ ] **High-Aesthetic Member Experience**:
-  - 1-click **Tea Break** and **Lunch Break** directory.
+- [x] **Dual-Role Navigation**: Seamless switching between Member view and Admin Portal for authorized administrators.
+- [x] **Pending Approval Interceptor**: Protected routes and UI states preventing unapproved users from viewing live feeds or sending messages.
+- [x] **Admin Approval Dashboard**:
+  - Live queue of pending applicants with 1-click **Approve** and **Reject** (persisted in D1 and never re-appearing on subsequent polls).
+  - Searchable member directory with **"+ Add Member / Admin"** modal, **"Make Admin"** / **"Revoke Admin"** toggles, **Suspend** / **Reinstate**, and **Delete User Permanently**.
+  - Multi-campus switcher and CRUD manager (Add/Edit/Delete Campus).
+  - Per-campus spot manager with inline **Edit** and **Delete** buttons for all cafeteria and outdoor spots.
+  - Audit trail viewer recording approval, rejection, and role-change actions.
+- [x] **High-Aesthetic Member Experience**:
+  - 1-click **Tea Break** and **Lunch Break** directory with generic campus headers for privacy.
   - Smooth **Interest Pop-up Modal** with icebreakers, passions, and dietary vibes.
   - Instant **1-Tap Connect Ping** and real-time coordination chat drawer.
   - **"Broadcast My Break"** 5-second status modal.
-- [ ] **100% Zero-Cost Deployment Blueprint**: Complete `wrangler.toml` and SQL migrations ready to deploy to Cloudflare free tier.
+- [x] **Password Reset Lifecycle**: User raises reset request; admin reviews and approves in Admin Console; approved user logs in passwordless and is immediately forced to set a new password, then prompted to sign in again.
+- [x] **Clean Production Security**: All hardcoded credentials and test-fill buttons removed from public and admin login screens. Footer properly formatted as "MidDay Buddy backed by CoreReacher Enterprises".
+- [x] **100% Zero-Cost Deployment Blueprint**: Complete `wrangler.toml`, Cloudflare Pages Functions (`functions/api/`), Express fallback server (`server.ts`), and D1 SQL schema with zero-cost architecture.
