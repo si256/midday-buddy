@@ -84,10 +84,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = React.useState('');
   
   // Selected campus inside the Locations/Campus tab
-  const [selectedCampusId, setSelectedCampusId] = React.useState<string>(activeCommunity.id);
+  const [selectedCampusId, setSelectedCampusId] = React.useState<string>(activeCommunity?.id || communities[0]?.id || 'comm_siruseri');
 
-  const currentViewingCommunity = communities.find((c) => c.id === selectedCampusId) || activeCommunity;
-  const currentViewingLocations = currentViewingCommunity.locations || [];
+  const currentViewingCommunity = communities.find((c) => c.id === selectedCampusId) || activeCommunity || communities[0] || {
+    id: 'comm_siruseri',
+    name: 'Workplace Campus',
+    slug: 'workplace-campus',
+    city: 'Chennai',
+    description: '',
+    memberCount: 0,
+    activeBreaksCount: 0,
+    locations: [],
+  };
+  const currentViewingLocations = currentViewingCommunity?.locations || [];
 
   // Modals state
   const [showAddCampusModal, setShowAddCampusModal] = React.useState(false);
@@ -121,7 +130,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newUserEmpId, setNewUserEmpId] = React.useState('');
   const [newUserRole, setNewUserRole] = React.useState<UserRole>('user');
   const [newUserRoleTitle, setNewUserRoleTitle] = React.useState('Software Engineer');
-  const [newUserCampusId, setNewUserCampusId] = React.useState(activeCommunity.id);
+  const [newUserCampusId, setNewUserCampusId] = React.useState(activeCommunity?.id || communities[0]?.id || 'comm_siruseri');
   const [newUserPassword, setNewUserPassword] = React.useState('');
 
   // Filtering
@@ -295,7 +304,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span>Campus Admin Console</span>
             </div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-              {activeCommunity.name} Moderation
+              {activeCommunity?.name || 'Workplace Campus'} Moderation
             </h1>
             <p className="mt-1 text-xs text-slate-500">
               Campus administration, member verification, multi-campus spots, and security logs.

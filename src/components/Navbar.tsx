@@ -69,10 +69,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* User's assigned workplace campus (shown only when authenticated) */}
-          {currentUser && activeCommunity && (
+          {currentUser && (
             <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-stone-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
               <MapPin className="h-3 w-3 text-orange-500" />
-              <span>{activeCommunity.name}</span>
+              <span>{activeCommunity?.name || 'Workplace Campus'}</span>
             </span>
           )}
         </div>

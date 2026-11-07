@@ -38,7 +38,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       email: email.trim(),
       name: name.trim(),
       roleTitle: roleTitle.trim() || 'Software Engineer',
-      campusId: activeCommunity.id,
+      campusId: activeCommunity?.id || 'comm_siruseri',
       avatarSeed: name.trim(),
       avatarBgColor: randomColor,
       bio: bio.trim() || 'Looking forward to meeting colleagues during midday breaks along the spine.',
@@ -71,7 +71,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 Join MidDay Buddy
               </h2>
               <p className="text-[11px] text-slate-500">
-                Register for {activeCommunity.name} break community
+                Register for {activeCommunity?.name || 'Campus'} break community
               </p>
             </div>
           </div>

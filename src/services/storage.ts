@@ -128,15 +128,24 @@ export const StorageService = {
 
   getCommunities(): Community[] {
     const deletedIds = new Set(this.getDeletedCommunityIds());
-    const comms = readStorage<Community[]>(KEYS.COMMUNITIES, []);
+    let comms = readStorage<Community[]>(KEYS.COMMUNITIES, []);
     const isInit = localStorage.getItem('mdb_communities_initialized_v2');
 
-    if (!isInit && comms.length === 0) {
+    if (!isInit || comms.length === 0) {
       writeStorage(KEYS.COMMUNITIES, INITIAL_COMMUNITIES);
       localStorage.setItem('mdb_communities_initialized_v2', 'true');
-      return INITIAL_COMMUNITIES.filter((c) => !deletedIds.has(c.id));
+      comms = INITIAL_COMMUNITIES;
     }
-    return comms.filter((c) => !deletedIds.has(c.id));
+
+    let active = comms.filter((c) => !deletedIds.has(c.id));
+    if (active.length === 0) {
+      // Enterprise safety net: ensure at least one campus is always present to prevent render crashes
+      active = [INITIAL_COMMUNITIES[0]];
+      const updatedTombstones = this.getDeletedCommunityIds().filter((id) => id !== INITIAL_COMMUNITIES[0].id);
+      writeStorage('mdb_deleted_community_ids_v1', updatedTombstones);
+      writeStorage(KEYS.COMMUNITIES, active);
+    }
+    return active;
   },
 
   saveCommunities(communities: Community[]): void {

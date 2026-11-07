@@ -29,6 +29,7 @@ import {
 } from './types';
 import { StorageService } from './services/storage';
 import { ApiService } from './services/api';
+import { INITIAL_COMMUNITIES } from './data/seedData';
 import { Navbar } from './components/Navbar';
 import { BreakCard } from './components/BreakCard';
 import { InterestModal } from './components/InterestModal';
@@ -55,10 +56,13 @@ export default function App() {
   }, []);
 
   // Core Persistent State
-  const [communities, setCommunities] = React.useState<Community[]>(() => StorageService.getCommunities());
+  const [communities, setCommunities] = React.useState<Community[]>(() => {
+    const list = StorageService.getCommunities();
+    return list.length > 0 ? list : INITIAL_COMMUNITIES;
+  });
   const [activeCommunity, setActiveCommunity] = React.useState<Community>(() => {
     const comms = StorageService.getCommunities();
-    return comms[0];
+    return comms.length > 0 ? comms[0] : INITIAL_COMMUNITIES[0];
   });
   const [allUsers, setAllUsers] = React.useState<UserProfile[]>(() => StorageService.getUsers());
   const [currentUser, setCurrentUser] = React.useState<UserProfile | null>(() => StorageService.getCurrentSessionUser());
@@ -149,11 +153,15 @@ export default function App() {
         ApiService.getResetRequests().catch(() => []),
       ]);
       const deletedCommIds = new Set(StorageService.getDeletedCommunityIds());
-      const validComms = comms.filter((c) => !deletedCommIds.has(c.id));
-      setCommunities(validComms);
-      if (validComms.length > 0) {
-        setActiveCommunity((prev) => validComms.find((c) => c.id === prev.id) || validComms[0]);
+      let validComms = comms.filter((c) => !deletedCommIds.has(c.id));
+      if (validComms.length === 0) {
+        validComms = [INITIAL_COMMUNITIES[0]];
       }
+      setCommunities(validComms);
+      setActiveCommunity((prev) => {
+        const found = validComms.find((c) => c.id === prev?.id);
+        return found || validComms[0];
+      });
       setAllUsers(users);
       setBreakPosts(breaks);
       setAuditLogs(logs);
@@ -195,20 +203,21 @@ export default function App() {
   React.useEffect(() => {
     if (currentUser?.campusId && communities.length > 0 && activeView !== 'admin') {
       const match = communities.find((c) => c.id === currentUser.campusId);
-      if (match && match.id !== activeCommunity.id) {
+      if (match && match.id !== activeCommunity?.id) {
         setActiveCommunity(match);
       }
     }
-  }, [currentUser?.campusId, communities, activeCommunity.id, activeView]);
+  }, [currentUser?.campusId, communities, activeCommunity?.id, activeView]);
 
   // Reset zone filter whenever campus changes
   React.useEffect(() => {
     setSelectedZone('all');
-  }, [activeCommunity.id]);
+  }, [activeCommunity?.id]);
 
   // Compute available zones dynamically from current campus locations
   const availableCampusZones = React.useMemo(() => {
-    return Array.from(new Set(activeCommunity.locations.map((l) => l.zone))).filter(Boolean);
+    const locs = activeCommunity?.locations || [];
+    return Array.from(new Set(locs.map((l) => l.zone))).filter(Boolean);
   }, [activeCommunity]);
 
   const pendingApprovalsCount = allUsers.filter((u) => u.status === 'pending_approval').length;
@@ -216,7 +225,7 @@ export default function App() {
 
   // Filter posts based on active community and filters
   const filteredPosts = breakPosts.filter((post) => {
-    if (post.communityId !== activeCommunity.id) return false;
+    if (activeCommunity?.id && post.communityId !== activeCommunity.id) return false;
     if (selectedBreakType !== 'all' && post.breakType !== selectedBreakType) return false;
     if (onlyFreeNow && post.expiresAt <= now) return false;
     if (selectedZone !== 'all' && post.zone !== selectedZone) return false;
@@ -559,7 +568,7 @@ export default function App() {
               onChangeUserRole={handleChangeUserRole}
               onDeleteUser={handleDeleteUser}
               onCreateUser={handleCreateUser}
-              locations={activeCommunity.locations}
+              locations={activeCommunity?.locations || []}
               onAddLocation={handleAddLocation}
               onUpdateLocation={handleUpdateLocation}
               onDeleteLocation={handleDeleteLocation}
@@ -674,17 +683,17 @@ export default function App() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider backdrop-blur-xs">
-                      {activeCommunity.name} · {activeCommunity.city}
+                      {activeCommunity?.name || 'Workplace Campus'} · {activeCommunity?.city || ''}
                     </span>
                     <span className="text-xs text-amber-100">
                       {filteredPosts.filter((p) => p.expiresAt > now).length} active right now
                     </span>
                   </div>
                   <h1 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">
-                    Never eat or grab chai alone at {activeCommunity.name}.
+                    Never eat or grab chai alone at {activeCommunity?.name || 'Workplace Campus'}.
                   </h1>
                   <p className="mt-1 text-xs sm:text-sm text-amber-100 max-w-xl">
-                    Connect with verified colleagues across {activeCommunity.name} ({activeCommunity.city}) for spontaneous tea breaks, cafeteria meals, and outdoor walks.
+                    Connect with verified colleagues across {activeCommunity?.name || 'your workplace campus'} for spontaneous tea breaks, cafeteria meals, and outdoor walks.
                   </p>
                 </div>
 
@@ -772,7 +781,7 @@ export default function App() {
                   onChange={(e) => setSelectedZone(e.target.value)}
                   className="rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  <option value="all">All Campus Zones ({activeCommunity.locations.length} spots)</option>
+                  <option value="all">All Campus Zones ({(activeCommunity?.locations || []).length} spots)</option>
                   {availableCampusZones.map((z) => (
                     <option key={z} value={z}>{z}</option>
                   ))}
@@ -835,7 +844,7 @@ export default function App() {
           isOpen={isBroadcastOpen}
           onClose={() => setIsBroadcastOpen(false)}
           currentUser={currentUser}
-          locations={activeCommunity.locations}
+          locations={activeCommunity?.locations || []}
           onBroadcast={handleBroadcastBreak}
         />
       )}

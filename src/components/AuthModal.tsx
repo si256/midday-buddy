@@ -34,8 +34,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Sign up fields
   const [name, setName] = React.useState('');
   const [employeeId, setEmployeeId] = React.useState('');
-  const [roleTitle, setRoleTitle] = React.useState('');
-  const [selectedCampusId, setSelectedCampusId] = React.useState(activeCommunity.id);
+  const [roleTitle, setRoleTitle] = React.useState('Software Engineer');
+  const [selectedCampusId, setSelectedCampusId] = React.useState(activeCommunity?.id || communities[0]?.id || 'comm_siruseri');
+
+  React.useEffect(() => {
+    if (activeCommunity?.id) {
+      setSelectedCampusId(activeCommunity.id);
+    }
+  }, [activeCommunity?.id]);
   const [bio, setBio] = React.useState('');
   const [icebreaker, setIcebreaker] = React.useState('');
   const [dietary, setDietary] = React.useState<DietaryPreference>('Pure Veg');
