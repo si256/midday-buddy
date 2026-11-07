@@ -26,6 +26,13 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     const adminName = body.adminName || 'Campus Admin';
     const nowISO = new Date().toISOString();
 
+    if ((userId === 'usr_admin' || userId === 'admin') && newRole !== 'community_admin') {
+      return new Response(JSON.stringify({ error: 'Master Administrator role cannot be revoked.' }), {
+        status: 403,
+        headers: CORS_HEADERS,
+      });
+    }
+
     let targetUserName = userId;
 
     if (env.DB) {

@@ -412,8 +412,10 @@ export const ApiService = {
       const res = await fetch(`${API_BASE}/communities`);
       if (!isTransportFailure(res.status)) {
         const data = await handleResponse<Community[]>(res);
-        StorageService.saveCommunities(data);
-        return data;
+        const deletedIds = new Set(StorageService.getDeletedCommunityIds());
+        const filtered = (data || []).filter((c) => !deletedIds.has(c.id));
+        StorageService.saveCommunities(filtered);
+        return filtered;
       }
     } catch {}
 
@@ -514,6 +516,7 @@ export const ApiService = {
   },
 
   async deleteCommunity(id: string, admin: { id: string; name: string }): Promise<{ success: boolean; deletedCommunityId: string }> {
+    StorageService.deleteCommunity(id);
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(id)}`, {
         method: 'DELETE',
@@ -525,7 +528,6 @@ export const ApiService = {
       }
     } catch {}
 
-    StorageService.deleteCommunity(id);
     return { success: true, deletedCommunityId: id };
   },
 

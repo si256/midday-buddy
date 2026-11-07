@@ -148,9 +148,11 @@ export default function App() {
         ApiService.getAuditLogs(),
         ApiService.getResetRequests().catch(() => []),
       ]);
-      setCommunities(comms);
-      if (comms.length > 0) {
-        setActiveCommunity((prev) => comms.find((c) => c.id === prev.id) || comms[0]);
+      const deletedCommIds = new Set(StorageService.getDeletedCommunityIds());
+      const validComms = comms.filter((c) => !deletedCommIds.has(c.id));
+      setCommunities(validComms);
+      if (validComms.length > 0) {
+        setActiveCommunity((prev) => validComms.find((c) => c.id === prev.id) || validComms[0]);
       }
       setAllUsers(users);
       setBreakPosts(breaks);
@@ -299,13 +301,30 @@ export default function App() {
   const handleDeleteCommunity = async (id: string) => {
     try {
       const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      await ApiService.deleteCommunity(id, adminInfo);
-      setCommunities((prev) => prev.filter((c) => c.id !== id));
+      // 1. Immediately delete from local storage tombstones
+      StorageService.deleteCommunity(id);
+      // 2. Immediately update state
+      const remaining = communities.filter((c) => c.id !== id);
+      setCommunities(remaining);
       if (activeCommunity.id === id) {
-        const remaining = communities.filter((c) => c.id !== id);
-        if (remaining.length > 0) setActiveCommunity(remaining[0]);
+        if (remaining.length > 0) {
+          setActiveCommunity(remaining[0]);
+        } else {
+          setActiveCommunity({
+            id: 'comm_none',
+            name: 'No Campuses Configured',
+            slug: 'none',
+            city: '',
+            description: 'Please add a campus via the button above.',
+            memberCount: 0,
+            activeBreaksCount: 0,
+            locations: [],
+          });
+        }
       }
-      showToast('Deleted campus.');
+      // 3. Call backend API to delete from database
+      await ApiService.deleteCommunity(id, adminInfo);
+      showToast('Deleted campus successfully.');
       await syncWithBackend();
     } catch (err: any) {
       showToast(`Delete campus failed: ${err.message}`);

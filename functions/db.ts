@@ -154,7 +154,23 @@ export async function ensureD1Schema(db: D1Database): Promise<void> {
       );
     `).run().catch(() => {});
 
-    // 9. Seed Master Admin if not present
+    // 9. Ensure 'system_metadata' and 'deleted_communities' tables exist for industrial migrations
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS system_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `).run().catch(() => {});
+
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deleted_communities (
+        id TEXT PRIMARY KEY,
+        deleted_at TEXT NOT NULL
+      );
+    `).run().catch(() => {});
+
+    // 10. Seed Master Admin if not present
     const adminUser = await db.prepare(`SELECT id FROM users WHERE LOWER(email) = 'admin@middaybuddy.com';`).first().catch(() => null);
     if (!adminUser) {
       await db.prepare(`
@@ -169,28 +185,37 @@ export async function ensureD1Schema(db: D1Database): Promise<void> {
       `).run().catch(() => {});
     }
 
-    // 10. Seed default community if not present
-    const defaultCommunity = await db.prepare(`SELECT id FROM communities WHERE id = 'comm_siruseri';`).first().catch(() => null);
-    if (!defaultCommunity) {
-      await db.prepare(`
-        INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
-        VALUES ('comm_siruseri', 'siruseri-campus', 'TCS Siruseri Campus', 'Chennai', 'Iconic 70-acre butterfly campus with Central Spine', 342, 14, 1730000000000);
-      `).run().catch(() => {});
+    // 11. Seed default communities ONCE only via authoritative system migration flag
+    const seedMeta = await db.prepare(`SELECT value FROM system_metadata WHERE key = 'seed_applied';`).first<{ value: string }>().catch(() => null);
+    if (!seedMeta) {
+      // Check existing count to avoid overwriting existing data
+      const existingCount = await db.prepare(`SELECT COUNT(*) as count FROM communities;`).first<{ count: number }>().catch(() => ({ count: 0 }));
+      if (!existingCount || existingCount.count === 0) {
+        await db.prepare(`
+          INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
+          VALUES ('comm_siruseri', 'siruseri-campus', 'TCS Siruseri Campus', 'Chennai', 'Iconic 70-acre butterfly campus with Central Spine', 342, 14, 1730000000000);
+        `).run().catch(() => {});
+
+        await db.prepare(`
+          INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
+          VALUES ('comm_tidel', 'tidel-park', 'Tidel Park Campus', 'Chennai', 'IT landmark on OMR with multi-floor food courts', 185, 6, 1730000000000);
+        `).run().catch(() => {});
+
+        await db.prepare(`
+          INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
+          VALUES ('comm_manyata', 'manyata-tech-park', 'Manyata Tech Park', 'Bengaluru', 'Dynamic tech campus in North Bengaluru', 220, 9, 1730000000000);
+        `).run().catch(() => {});
+
+        await db.prepare(`
+          INSERT OR IGNORE INTO locations (id, community_id, name, zone, description, is_popular, created_at)
+          VALUES ('loc_spine_chai', 'comm_siruseri', 'Spine Chai Point (Near Core)', 'Central Spine', 'Popular ginger chai and filter coffee kiosk', 1, 1730000000000);
+        `).run().catch(() => {});
+      }
 
       await db.prepare(`
-        INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
-        VALUES ('comm_tidel', 'tidel-park', 'Tidel Park Campus', 'Chennai', 'IT landmark on OMR with multi-floor food courts', 185, 6, 1730000000000);
-      `).run().catch(() => {});
-
-      await db.prepare(`
-        INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
-        VALUES ('comm_manyata', 'manyata-tech-park', 'Manyata Tech Park', 'Bengaluru', 'Dynamic tech campus in North Bengaluru', 220, 9, 1730000000000);
-      `).run().catch(() => {});
-
-      await db.prepare(`
-        INSERT OR IGNORE INTO locations (id, community_id, name, zone, description, is_popular, created_at)
-        VALUES ('loc_spine_chai', 'comm_siruseri', 'Spine Chai Point (Near Core)', 'Central Spine', 'Popular ginger chai and filter coffee kiosk', 1, 1730000000000);
-      `).run().catch(() => {});
+        INSERT OR REPLACE INTO system_metadata (key, value, updated_at)
+        VALUES ('seed_applied', '1', ?);
+      `).bind(Date.now()).run().catch(() => {});
     }
 
     isSchemaEnsured = true;

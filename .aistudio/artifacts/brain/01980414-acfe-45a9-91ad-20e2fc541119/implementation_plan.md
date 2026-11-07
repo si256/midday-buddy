@@ -293,5 +293,20 @@ CREATE TABLE audit_logs (
   - Instant **1-Tap Connect Ping** and real-time coordination chat drawer.
   - **"Broadcast My Break"** 5-second status modal.
 - [x] **Password Reset Lifecycle**: User raises reset request; admin reviews and approves in Admin Console; approved user logs in passwordless and is immediately forced to set a new password, then prompted to sign in again.
-- [x] **Clean Production Security**: All hardcoded credentials and test-fill buttons removed from public and admin login screens. Footer properly formatted as "MidDay Buddy backed by CoreReacher Enterprises".
 - [x] **100% Zero-Cost Deployment Blueprint**: Complete `wrangler.toml`, Cloudflare Pages Functions (`functions/api/`), Express fallback server (`server.ts`), and D1 SQL schema with zero-cost architecture.
+
+---
+
+## 7. Enterprise MNC Industrial Standards & Data Governance
+
+To meet Fortune 500 / MNC enterprise production benchmarks, the platform implements strict data governance and security protocols:
+1. **Authoritative Migration & Seeding Guard (`system_metadata`)**:
+   - Seed scripts check the `system_metadata` key `seed_applied`. Default entities are seeded exactly once during bootstrap. Deleted campuses, locations, and users are never resurrected by subsequent requests or polling workers.
+2. **Permanent Tombstone & Cascading Cleanup (`deleted_communities`)**:
+   - Deleting a campus registers an immutable record in `deleted_communities`, cascadingly purges related cafeteria spots and active breaks, and prevents any cache fallback from displaying defunct records.
+3. **No Native Alert/Confirm Hazards (Iframe Compliance)**:
+   - Replaced fragile browser `window.confirm` / `alert` primitives with animated, accessible in-app confirmation modal dialogs with explicit destructive impact warnings.
+4. **Master Administrator Protection & Role-Based Access Control (RBAC)**:
+   - The Root Platform Administrator (`admin@middaybuddy.com`) is protected against accidental or malicious deletion and role revocation across both Cloudflare edge functions and the Express server.
+5. **Zero Credential Exposure**:
+   - Passwords and password hashes are stripped from all member listings, break feeds, and audit trail records. Secure login requires verified credentials with zero public hint cards.

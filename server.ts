@@ -42,6 +42,7 @@ app.use((req: Request, res: Response, next) => {
 // In-Memory Server Authoritative State (Clean Production Database Layer)
 let dbUsers: UserProfile[] = [...INITIAL_USERS];
 let dbCommunities: Community[] = [...INITIAL_COMMUNITIES];
+let dbDeletedCommunities: Set<string> = new Set();
 let dbBreaks: BreakPost[] = [];
 let dbAuditLogs: AuditLog[] = [];
 let dbMessages: Record<string, ChatMessage[]> = {};
@@ -374,7 +375,7 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
 // 2. COMMUNITIES & CAMPUS LOCATIONS
 // ==========================================
 app.get('/api/communities', (req: Request, res: Response) => {
-  res.json(dbCommunities);
+  res.json(dbCommunities.filter((c) => !dbDeletedCommunities.has(c.id)));
 });
 
 app.post('/api/communities/:id/locations', (req: Request, res: Response) => {
@@ -533,19 +534,24 @@ app.delete('/api/communities/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const { adminId, adminName } = req.body;
 
+  dbDeletedCommunities.add(id);
+
   const commIndex = dbCommunities.findIndex((c) => c.id === id);
-  if (commIndex === -1) {
-    return res.status(404).json({ error: 'Community not found' });
+  let removedName = id;
+  if (commIndex !== -1) {
+    const removed = dbCommunities.splice(commIndex, 1)[0];
+    removedName = removed.name;
   }
 
-  const removed = dbCommunities.splice(commIndex, 1)[0];
+  // Cascading cleanup of active breaks in this campus
+  dbBreaks = dbBreaks.filter((b) => b.communityId !== id);
 
   const log: AuditLog = {
     id: `log_${Date.now()}`,
     adminId: adminId || 'admin',
     adminName: adminName || 'Campus Admin',
     action: 'DELETE_COMMUNITY' as any,
-    details: `Deleted campus ${removed.name}`,
+    details: `Deleted campus ${removedName}`,
     timestamp: new Date().toISOString(),
   };
   dbAuditLogs.unshift(log);
@@ -830,6 +836,9 @@ app.post('/api/users/:id/role', (req: Request, res: Response) => {
   }
 
   const newRole = role === 'community_admin' ? 'community_admin' : 'user';
+  if ((id === 'usr_admin' || id === 'admin') && newRole !== 'community_admin') {
+    return res.status(403).json({ error: 'Master Administrator role cannot be revoked.' });
+  }
   user.role = newRole;
 
   const actionText = newRole === 'community_admin' ? 'Promoted to Campus Admin' : 'Revoked Campus Admin rights';
@@ -852,6 +861,10 @@ app.post('/api/users/:id/role', (req: Request, res: Response) => {
 app.delete('/api/users/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const { adminId, adminName } = req.body;
+
+  if (id === 'usr_admin' || id === 'admin') {
+    return res.status(403).json({ error: 'Master Administrator account cannot be deleted.' });
+  }
 
   const userIndex = dbUsers.findIndex((u) => u.id === id);
   if (userIndex === -1) {

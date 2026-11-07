@@ -17,7 +17,14 @@ export const onRequestOptions: PagesFunction<AppEnv> = async () => {
 
 export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
   const { env, params, request } = context;
-  const userId = params.id as string;
+  const userId = decodeURIComponent(params.id as string);
+
+  if (userId === 'usr_admin' || userId === 'admin') {
+    return new Response(JSON.stringify({ error: 'Master Administrator account cannot be deleted.' }), {
+      status: 403,
+      headers: CORS_HEADERS,
+    });
+  }
 
   try {
     const body: any = await request.json().catch(() => ({}));

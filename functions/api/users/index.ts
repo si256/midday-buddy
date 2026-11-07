@@ -1,11 +1,10 @@
-import type { AppEnv, PagesFunction } from '../env';
-import { ensureD1Schema } from '../db';
+import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
 
 const DEFAULT_USERS = [
   {
     id: 'usr_admin',
     email: 'admin@middaybuddy.com',
-    password: 'Admin@12345',
     name: 'System Administrator',
     employeeId: 'ADM-001',
     roleTitle: 'Platform Administrator',
@@ -48,10 +47,11 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
   try {
     await ensureD1Schema(env.DB);
+    // Industrial standard: NEVER return raw passwords or password hashes in user listing
     const { results } = await env.DB.prepare(
       `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users WHERE status IS NULL OR status != 'rejected' ORDER BY created_at DESC`
     ).all().catch(async () => {
-      return await env.DB!.prepare(`SELECT * FROM users WHERE status IS NULL OR status != 'rejected';`).all();
+      return await env.DB!.prepare(`SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users WHERE status IS NULL OR status != 'rejected';`).all();
     });
 
     return new Response(JSON.stringify(results && results.length > 0 ? results : DEFAULT_USERS), {
@@ -127,8 +127,8 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         email: body.email,
         campusId: body.campusId,
         roleTitle: body.roleTitle,
-        status: 'pending_approval',
-        role: 'user',
+        status: body.status || 'pending_approval',
+        role: body.role || 'user',
         registeredAt: nowISO,
       }),
       { status: 201, headers: CORS_HEADERS }

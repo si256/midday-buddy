@@ -122,17 +122,27 @@ export const StorageService = {
   },
 
   // --- COMMUNITIES ---
+  getDeletedCommunityIds(): string[] {
+    return readStorage<string[]>('mdb_deleted_community_ids_v1', []);
+  },
+
   getCommunities(): Community[] {
+    const deletedIds = new Set(this.getDeletedCommunityIds());
     const comms = readStorage<Community[]>(KEYS.COMMUNITIES, []);
-    if (comms.length === 0) {
+    const isInit = localStorage.getItem('mdb_communities_initialized_v2');
+
+    if (!isInit && comms.length === 0) {
       writeStorage(KEYS.COMMUNITIES, INITIAL_COMMUNITIES);
-      return INITIAL_COMMUNITIES;
+      localStorage.setItem('mdb_communities_initialized_v2', 'true');
+      return INITIAL_COMMUNITIES.filter((c) => !deletedIds.has(c.id));
     }
-    return comms;
+    return comms.filter((c) => !deletedIds.has(c.id));
   },
 
   saveCommunities(communities: Community[]): void {
-    writeStorage(KEYS.COMMUNITIES, communities);
+    const deletedIds = new Set(this.getDeletedCommunityIds());
+    const filtered = communities.filter((c) => !deletedIds.has(c.id));
+    writeStorage(KEYS.COMMUNITIES, filtered);
   },
 
   addLocationToCommunity(communityId: string, location: CampusLocation): void {
@@ -172,7 +182,11 @@ export const StorageService = {
   },
 
   addCommunity(community: Community): void {
-    const comms = this.getCommunities();
+    // If it was previously in deleted tombstone list, remove it
+    const deletedIds = this.getDeletedCommunityIds().filter((id) => id !== community.id);
+    writeStorage('mdb_deleted_community_ids_v1', deletedIds);
+
+    const comms = this.getCommunities().filter((c) => c.id !== community.id);
     this.saveCommunities([...comms, community]);
   },
 
@@ -182,8 +196,17 @@ export const StorageService = {
   },
 
   deleteCommunity(communityId: string): void {
-    const comms = this.getCommunities().filter((c) => c.id !== communityId);
-    this.saveCommunities(comms);
+    // 1. Add to permanent deleted tombstones
+    const deletedIds = Array.from(new Set([...this.getDeletedCommunityIds(), communityId]));
+    writeStorage('mdb_deleted_community_ids_v1', deletedIds);
+
+    // 2. Remove from active communities list
+    const comms = readStorage<Community[]>(KEYS.COMMUNITIES, []).filter((c) => c.id !== communityId);
+    writeStorage(KEYS.COMMUNITIES, comms);
+
+    // 3. Remove associated breaks
+    const breaks = this.getBreaks().filter((b) => b.communityId !== communityId);
+    this.saveBreaks(breaks);
   },
 
   // --- BREAK POSTS ---

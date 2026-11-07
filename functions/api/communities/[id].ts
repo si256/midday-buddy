@@ -65,7 +65,7 @@ export const onRequestPut: PagesFunction<AppEnv> = async (context) => {
 
 export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
   const { env, params, request } = context;
-  const communityId = params.id as string;
+  const communityId = decodeURIComponent(params.id as string);
 
   try {
     const body: any = await request.json().catch(() => ({}));
@@ -81,6 +81,8 @@ export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
       await env.DB.prepare(`DELETE FROM locations WHERE community_id = ?;`).bind(communityId).run();
       // Delete breaks
       await env.DB.prepare(`DELETE FROM breaks WHERE community_id = ?;`).bind(communityId).run();
+      // Record in deleted_communities tombstone table so seed never resurrects it
+      await env.DB.prepare(`INSERT OR REPLACE INTO deleted_communities (id, deleted_at) VALUES (?, ?);`).bind(communityId, nowISO).run().catch(() => {});
 
       const logId = `log_${Date.now()}`;
       await env.DB.prepare(`

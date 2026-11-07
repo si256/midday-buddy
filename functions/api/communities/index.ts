@@ -1,5 +1,5 @@
-import type { AppEnv, PagesFunction } from '../env';
-import { ensureD1Schema } from '../db';
+import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
 
 const DEFAULT_COMMUNITIES = [
   {
@@ -86,15 +86,11 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
     await ensureD1Schema(env.DB);
     const commsResult = await env.DB.prepare(`SELECT * FROM communities ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
     const locsResult = await env.DB.prepare(`SELECT * FROM locations ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
+    const deletedResult = await env.DB.prepare(`SELECT id FROM deleted_communities;`).all<{ id: string }>().catch(() => ({ results: [] }));
 
-    let comms = commsResult.results || [];
+    const deletedIds = new Set((deletedResult.results || []).map((r) => r.id));
+    let comms = (commsResult.results || []).filter((c) => !deletedIds.has(c.id));
     const locs = locsResult.results || [];
-
-    if (!comms || comms.length === 0) {
-      return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
-        headers: CORS_HEADERS,
-      });
-    }
 
     // Attach mapped locations to each community
     const enriched = comms.map((c) => ({
@@ -121,7 +117,7 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
       headers: CORS_HEADERS,
     });
   } catch {
-    return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
+    return new Response(JSON.stringify([]), {
       headers: CORS_HEADERS,
     });
   }
@@ -147,6 +143,9 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     if (env.DB) {
       await ensureD1Schema(env.DB);
+      // Remove from deleted_communities if re-creating
+      await env.DB.prepare(`DELETE FROM deleted_communities WHERE id = ?;`).bind(id).run().catch(() => {});
+
       await env.DB.prepare(`
         INSERT INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
         VALUES (?, ?, ?, ?, ?, 0, 0, ?);

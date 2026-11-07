@@ -92,11 +92,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Modals state
   const [showAddCampusModal, setShowAddCampusModal] = React.useState(false);
   const [editingCampus, setEditingCampus] = React.useState<Community | null>(null);
+  const [deletingCampus, setDeletingCampus] = React.useState<Community | null>(null);
+  const [campusWarning, setCampusWarning] = React.useState<string | null>(null);
   
   const [showAddSpotModal, setShowAddSpotModal] = React.useState(false);
   const [editingSpot, setEditingSpot] = React.useState<CampusLocation | null>(null);
+  const [deletingSpot, setDeletingSpot] = React.useState<CampusLocation | null>(null);
 
   const [showAddUserModal, setShowAddUserModal] = React.useState(false);
+  const [deletingUser, setDeletingUser] = React.useState<UserProfile | null>(null);
   const [rejectingUserId, setRejectingUserId] = React.useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = React.useState('Does not meet campus verification criteria');
 
@@ -167,18 +171,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteCampusClick = async (comm: Community) => {
+  const handleDeleteCampusClick = (comm: Community) => {
     if (communities.length <= 1) {
-      alert('Cannot delete the only campus. At least one workplace campus must exist.');
+      setCampusWarning('Cannot delete the only campus. At least one workplace campus must exist.');
       return;
     }
-    if (confirm(`Are you sure you want to delete campus "${comm.name}"? All spots under this campus will also be removed.`)) {
-      await onDeleteCommunity(comm.id);
-      const remaining = communities.filter((c) => c.id !== comm.id);
-      if (remaining.length > 0) {
-        setSelectedCampusId(remaining[0].id);
-        onSelectCommunity(remaining[0]);
-      }
+    setDeletingCampus(comm);
+  };
+
+  const handleConfirmDeleteCampus = async () => {
+    if (!deletingCampus) return;
+    const commToDelete = deletingCampus;
+    setDeletingCampus(null);
+    await onDeleteCommunity(commToDelete.id);
+    const remaining = communities.filter((c) => c.id !== commToDelete.id);
+    if (remaining.length > 0) {
+      setSelectedCampusId(remaining[0].id);
+      onSelectCommunity(remaining[0]);
     }
   };
 
@@ -223,10 +232,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteSpotClick = async (loc: CampusLocation) => {
-    if (confirm(`Are you sure you want to delete spot "${loc.name}"?`)) {
-      await onDeleteLocation(currentViewingCommunity.id, loc.id);
-    }
+  const handleDeleteSpotClick = (loc: CampusLocation) => {
+    setDeletingSpot(loc);
+  };
+
+  const handleConfirmDeleteSpot = async () => {
+    if (!deletingSpot) return;
+    const locToDelete = deletingSpot;
+    setDeletingSpot(null);
+    await onDeleteLocation(currentViewingCommunity.id, locToDelete.id);
   };
 
   // --- Handlers for Users ---
@@ -257,6 +271,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setRejectingUserId(null);
       setRejectionReason('Does not meet campus verification criteria');
     }
+  };
+
+  const handleDeleteUserClick = (user: UserProfile) => {
+    setDeletingUser(user);
+  };
+
+  const handleConfirmDeleteUser = () => {
+    if (!deletingUser) return;
+    const userToDelete = deletingUser;
+    setDeletingUser(null);
+    onDeleteUser(userToDelete.id);
   };
 
   return (
@@ -778,11 +803,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {/* Delete User */}
                             {!isMasterAdmin && (
                               <button
-                                onClick={() => {
-                                  if (confirm(`Are you sure you want to permanently delete user "${member.name}"?`)) {
-                                    onDeleteUser(member.id);
-                                  }
-                                }}
+                                onClick={() => handleDeleteUserClick(member)}
                                 title="Delete User Permanently"
                                 className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                               >
@@ -1399,6 +1420,137 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-sm"
               >
                 Confirm & Reject Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CAMPUS WARNING (CANNOT DELETE ONLY CAMPUS) */}
+      {campusWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertTriangle className="h-6 w-6 shrink-0" />
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Campus Action Restricted
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              {campusWarning}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCampusWarning(null)}
+                className="rounded-xl bg-orange-600 px-5 py-2 text-xs font-bold text-white hover:bg-orange-700 transition-colors"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM DELETE CAMPUS */}
+      {deletingCampus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <Trash2 className="h-6 w-6 shrink-0" />
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Delete Campus Permanently
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Are you sure you want to delete <span className="font-bold text-slate-900 dark:text-white">"{deletingCampus.name}"</span>?
+            </p>
+            <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">
+              Warning: All {deletingCampus.locations?.length || 0} cafeteria & tea spots under this campus, active break posts, and associated records will be permanently removed. This action cannot be reversed.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingCampus(null)}
+                className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCampus}
+                className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-sm"
+              >
+                Delete Campus Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM DELETE SPOT */}
+      {deletingSpot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <Trash2 className="h-6 w-6 shrink-0" />
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Delete Spot
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Are you sure you want to delete spot <span className="font-bold text-slate-900 dark:text-white">"{deletingSpot.name}"</span> ({deletingSpot.zone})?
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingSpot(null)}
+                className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSpot}
+                className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-sm"
+              >
+                Delete Spot
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM DELETE USER */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <Trash2 className="h-6 w-6 shrink-0" />
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Delete Colleague Account
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Are you sure you want to permanently delete user <span className="font-bold text-slate-900 dark:text-white">"{deletingUser.name}"</span> ({deletingUser.email})?
+            </p>
+            <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">
+              This will scrub the user profile, active break history, and credentials from the system.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingUser(null)}
+                className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-stone-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUser}
+                className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-sm"
+              >
+                Delete User Permanently
               </button>
             </div>
           </div>
