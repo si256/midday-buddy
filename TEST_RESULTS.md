@@ -2,7 +2,7 @@
 
 **Date of Execution:** November 8, 2026  
 **Test Suite:** Unit Tests (`node:test` via `tsx`), TypeScript Compilation (`tsc --noEmit`), Lint Validation, and Browser Automation (`playwright-cli`).  
-**Result Summary:** 18/18 Unit Tests Passing (100%), 0 TypeScript Compilation Errors, 0 Linter Issues, 0 Browser Console Errors.
+**Result Summary:** 20/20 Unit Tests Passing (100%), 0 TypeScript Compilation Errors, 0 Linter Issues, 0 Browser Console Errors.
 
 ---
 
@@ -18,121 +18,48 @@ npx tsx --test src/utils/*.test.ts
 TAP version 13
 # Subtest: validateRegistrationInput enforces required fields including Employee ID and password length
 ok 1 - validateRegistrationInput enforces required fields including Employee ID and password length
-  ---
-  duration_ms: 1.553095
-  type: 'test'
-  ...
 # Subtest: validateForgotPasswordInput enforces Email ID and Employee ID
 ok 2 - validateForgotPasswordInput enforces Email ID and Employee ID
-  ---
-  duration_ms: 0.280606
-  type: 'test'
-  ...
 # Subtest: checkUniqueEmployeeId blocks duplicate employee IDs across cases and spaces
 ok 3 - checkUniqueEmployeeId blocks duplicate employee IDs across cases and spaces
-  ---
-  duration_ms: 0.271851
-  type: 'test'
-  ...
 # Subtest: checkUniqueEmployeeId ignores rejected users allowing re-registration
 ok 4 - checkUniqueEmployeeId ignores rejected users allowing re-registration
-  ---
-  duration_ms: 0.341937
-  type: 'test'
-  ...
 # Subtest: verifyPassword validates matching credentials and rejects incorrect ones
 ok 5 - verifyPassword validates matching credentials and rejects incorrect ones
-  ---
-  duration_ms: 0.204892
-  type: 'test'
-  ...
 # Subtest: canBroadcastBreak strictly gates unapproved and suspended members
 ok 6 - canBroadcastBreak strictly gates unapproved and suspended members
-  ---
-  duration_ms: 0.214007
-  type: 'test'
-  ...
 # Subtest: canAccessAdminPortal permits verified admins and blocks standard users
 ok 7 - canAccessAdminPortal permits verified admins and blocks standard users
-  ---
-  duration_ms: 0.310356
-  type: 'test'
-  ...
 # Subtest: Forgot password lifecycle: admin approval enables passwordless login, forces password change, and invalidates temporary state
 ok 8 - Forgot password lifecycle: admin approval enables passwordless login, forces password change, and invalidates temporary state
-  ---
-  duration_ms: 0.292398
-  type: 'test'
-  ...
+# Subtest: filterActiveLocations removes deleted spots immediately and keeps active spots
+ok 9 - filterActiveLocations removes deleted spots immediately and keeps active spots
+# Subtest: filterActiveLocations prevents re-injection when backend returns stale locations
+ok 10 - filterActiveLocations prevents re-injection when backend returns stale locations
 # Subtest: hashPassword produces formatted PBKDF2 string with salt and hash
-ok 9 - hashPassword produces formatted PBKDF2 string with salt and hash
-  ---
-  duration_ms: 32.57063
-  type: 'test'
-  ...
+ok 11 - hashPassword produces formatted PBKDF2 string with salt and hash
 # Subtest: verifyPassword validates matching PBKDF2 password and rejects invalid password
-ok 10 - verifyPassword validates matching PBKDF2 password and rejects invalid password
-  ---
-  duration_ms: 60.644537
-  type: 'test'
-  ...
+ok 12 - verifyPassword validates matching PBKDF2 password and rejects invalid password
 # Subtest: verifyPassword handles null, empty, and undefined gracefully without throwing
-ok 11 - verifyPassword handles null, empty, and undefined gracefully without throwing
-  ---
-  duration_ms: 0.565778
-  type: 'test'
-  ...
+ok 13 - verifyPassword handles null, empty, and undefined gracefully without throwing
 # Subtest: verifyPassword supports legacy plain-text during database transition
-ok 12 - verifyPassword supports legacy plain-text during database transition
-  ---
-  duration_ms: 0.299644
-  type: 'test'
-  ...
+ok 14 - verifyPassword supports legacy plain-text during database transition
 # Subtest: hashToken produces deterministic SHA-256 hex digest
-ok 13 - hashToken produces deterministic SHA-256 hex digest
-  ---
-  duration_ms: 3.585681
-  type: 'test'
-  ...
+ok 15 - hashToken produces deterministic SHA-256 hex digest
 # Subtest: generateSecureToken generates unpredictable prefixed tokens of high entropy
-ok 14 - generateSecureToken generates unpredictable prefixed tokens of high entropy
-  ---
-  duration_ms: 0.616436
-  type: 'test'
-  ...
+ok 16 - generateSecureToken generates unpredictable prefixed tokens of high entropy
 # Subtest: canAccessBreakDirectory enforces manual approval
-ok 15 - canAccessBreakDirectory enforces manual approval
-  ---
-  duration_ms: 1.471016
-  type: 'test'
-  ...
+ok 17 - canAccessBreakDirectory enforces manual approval
 # Subtest: filterBreaks filters by community
-ok 16 - filterBreaks filters by community
-  ---
-  duration_ms: 0.302442
-  type: 'test'
-  ...
+ok 18 - filterBreaks filters by community
 # Subtest: filterBreaks filters by breakType and freeNow
-ok 17 - filterBreaks filters by breakType and freeNow
-  ---
-  duration_ms: 0.286253
-  type: 'test'
-  ...
+ok 19 - filterBreaks filters by breakType and freeNow
 # Subtest: getRemainingMinutes calculates positive countdown
-ok 18 - getRemainingMinutes calculates positive countdown
-  ---
-  duration_ms: 0.342087
-  type: 'test'
-  ...
-1..18
-# tests 18
-# suites 0
-# pass 18
+ok 20 - getRemainingMinutes calculates positive countdown
+1..20
+# tests 20
+# pass 20
 # fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 375.144134
 ```
 
 ---

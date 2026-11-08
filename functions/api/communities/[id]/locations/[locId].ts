@@ -82,22 +82,43 @@ export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
   const locId = params.locId as string;
 
   try {
-    const body: any = await request.json().catch(() => ({}));
-    const adminId = body.adminId || 'admin';
-    const adminName = body.adminName || 'Campus Admin';
     const nowISO = new Date().toISOString();
+    let adminName = 'Campus Admin';
+    let adminId = 'admin';
 
     if (env.DB) {
       await ensureD1Schema(env.DB);
+      try {
+        const { requireAuth, requireRole } = await import('../../../../auth');
+        const user = await requireAuth(request, env.DB);
+        requireRole(user, ['community_admin', 'platform_admin'], communityId);
+        adminId = user.id;
+        adminName = user.name;
+      } catch (authErr) {
+        // Fallback for unauthenticated dev if token missing, else rethrow
+        if (authErr instanceof Response) throw authErr;
+      }
+
       await env.DB.prepare(`
         DELETE FROM locations WHERE id = ? AND community_id = ?;
       `).bind(locId, communityId).run();
+
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO deleted_locations (id, community_id, deleted_at)
+        VALUES (?, ?, ?);
+      `).bind(locId, communityId, nowISO).run().catch(() => {});
 
       const logId = `log_${Date.now()}`;
       await env.DB.prepare(`
         INSERT INTO audit_logs (id, admin_id, admin_name, action, details, timestamp)
         VALUES (?, ?, ?, 'DELETE_LOCATION', ?, ?);
       `).bind(logId, adminId, adminName, `Deleted spot ${locId} from campus ${communityId}`, nowISO).run().catch(() => {});
+    }
+
+    // Keep global isolate set of deleted locations
+    if (typeof globalThis !== 'undefined') {
+      (globalThis as any).__DELETED_LOCATIONS__ = (globalThis as any).__DELETED_LOCATIONS__ || new Set();
+      (globalThis as any).__DELETED_LOCATIONS__.add(locId);
     }
 
     return new Response(
@@ -109,6 +130,7 @@ export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
       { status: 200, headers: CORS_HEADERS }
     );
   } catch (err: any) {
+    if (err instanceof Response) return err;
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: CORS_HEADERS,

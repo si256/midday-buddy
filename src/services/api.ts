@@ -435,7 +435,13 @@ export const ApiService = {
       if (!isTransportFailure(res.status)) {
         const data = await handleResponse<Community[]>(res);
         const deletedIds = new Set(StorageService.getDeletedCommunityIds());
-        const filtered = (data || []).filter((c) => !deletedIds.has(c.id));
+        const deletedLocIds = new Set(StorageService.getDeletedLocationIds());
+        const filtered = (data || [])
+          .filter((c) => !deletedIds.has(c.id))
+          .map((c) => ({
+            ...c,
+            locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+          }));
         StorageService.saveCommunities(filtered);
         return filtered;
       }
@@ -452,6 +458,7 @@ export const ApiService = {
         body: JSON.stringify({ ...location, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
+        StorageService.addLocationToCommunity(communityId, location);
         return await handleResponse(res);
       }
     } catch {}
@@ -468,6 +475,7 @@ export const ApiService = {
         body: JSON.stringify({ ...location, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
+        StorageService.updateLocationInCommunity(communityId, locId, location);
         return await handleResponse(res);
       }
     } catch {}
@@ -479,6 +487,9 @@ export const ApiService = {
   },
 
   async deleteLocation(communityId: string, locId: string, admin: { id: string; name: string }): Promise<{ success: boolean; deletedLocationId: string }> {
+    // 1. Immediately record in local storage tombstones & update local community cache
+    StorageService.deleteLocationFromCommunity(communityId, locId);
+
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations/${encodeURIComponent(locId)}`, {
         method: 'DELETE',
@@ -490,7 +501,6 @@ export const ApiService = {
       }
     } catch {}
 
-    StorageService.deleteLocationFromCommunity(communityId, locId);
     return { success: true, deletedLocationId: locId };
   },
 

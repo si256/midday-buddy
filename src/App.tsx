@@ -155,9 +155,20 @@ export default function App() {
         isAdmin ? ApiService.getResetRequests().catch(() => []) : Promise.resolve([]),
       ]);
       const deletedCommIds = new Set(StorageService.getDeletedCommunityIds());
-      let validComms = comms.filter((c) => !deletedCommIds.has(c.id));
+      const deletedLocIds = new Set(StorageService.getDeletedLocationIds());
+      let validComms = comms
+        .filter((c) => !deletedCommIds.has(c.id))
+        .map((c) => ({
+          ...c,
+          locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+        }));
       if (validComms.length === 0) {
-        validComms = [INITIAL_COMMUNITIES[0]];
+        validComms = [
+          {
+            ...INITIAL_COMMUNITIES[0],
+            locations: (INITIAL_COMMUNITIES[0].locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+          },
+        ];
       }
       setCommunities(validComms);
       setActiveCommunity((prev) => {
@@ -418,6 +429,14 @@ export default function App() {
 
   const handleDeleteLocation = async (communityId: string, locId: string) => {
     try {
+      // 1. Optimistic UI update immediately
+      setCommunities((prev) =>
+        prev.map((c) => (c.id === communityId ? { ...c, locations: (c.locations || []).filter((l) => l.id !== locId) } : c))
+      );
+      setActiveCommunity((prev) =>
+        prev && prev.id === communityId ? { ...prev, locations: (prev.locations || []).filter((l) => l.id !== locId) } : prev
+      );
+
       const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
       await ApiService.deleteLocation(communityId, locId, adminInfo);
       await syncWithBackend();

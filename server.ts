@@ -43,6 +43,7 @@ app.use((req: Request, res: Response, next) => {
 let dbUsers: UserProfile[] = [...INITIAL_USERS];
 let dbCommunities: Community[] = [...INITIAL_COMMUNITIES];
 let dbDeletedCommunities: Set<string> = new Set();
+let dbDeletedLocations: Set<string> = new Set();
 let dbBreaks: BreakPost[] = [];
 let dbAuditLogs: AuditLog[] = [];
 let dbMessages: Record<string, ChatMessage[]> = {};
@@ -387,7 +388,13 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
 // 2. COMMUNITIES & CAMPUS LOCATIONS
 // ==========================================
 app.get('/api/communities', (req: Request, res: Response) => {
-  res.json(dbCommunities.filter((c) => !dbDeletedCommunities.has(c.id)));
+  const active = dbCommunities
+    .filter((c) => !dbDeletedCommunities.has(c.id))
+    .map((c) => ({
+      ...c,
+      locations: (c.locations || []).filter((l) => !dbDeletedLocations.has(l.id)),
+    }));
+  res.json(active);
 });
 
 app.post('/api/communities/:id/locations', (req: Request, res: Response) => {
@@ -403,6 +410,8 @@ app.post('/api/communities/:id/locations', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Name and zone are required' });
   }
 
+  dbDeletedLocations.delete(location.id);
+  community.locations = (community.locations || []).filter((l) => l.id !== location.id);
   community.locations.push(location);
 
   const log: AuditLog = {
@@ -462,11 +471,12 @@ app.delete('/api/communities/:id/locations/:locId', (req: Request, res: Response
   }
 
   const locIndex = community.locations.findIndex((l) => l.id === locId);
-  if (locIndex === -1) {
+  if (locIndex === -1 && !dbDeletedLocations.has(locId)) {
     return res.status(404).json({ error: 'Location spot not found' });
   }
 
-  const removedLoc = community.locations.splice(locIndex, 1)[0];
+  dbDeletedLocations.add(locId);
+  const removedLoc = locIndex !== -1 ? community.locations.splice(locIndex, 1)[0] : { name: locId, zone: '' };
 
   const log: AuditLog = {
     id: `log_${Date.now()}`,

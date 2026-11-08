@@ -76,8 +76,14 @@ export const onRequestOptions: PagesFunction<AppEnv> = async () => {
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   const { env } = context;
 
+  const inMemoryDeletedLocs: Set<string> = (typeof globalThis !== 'undefined' && (globalThis as any).__DELETED_LOCATIONS__) || new Set();
+
   if (!env.DB) {
-    return new Response(JSON.stringify(DEFAULT_COMMUNITIES), {
+    const sanitizedDefaults = DEFAULT_COMMUNITIES.map((c) => ({
+      ...c,
+      locations: (c.locations || []).filter((l) => !inMemoryDeletedLocs.has(l.id)),
+    }));
+    return new Response(JSON.stringify(sanitizedDefaults), {
       headers: CORS_HEADERS,
     });
   }
@@ -87,10 +93,16 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
     const commsResult = await env.DB.prepare(`SELECT * FROM communities ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
     const locsResult = await env.DB.prepare(`SELECT * FROM locations ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
     const deletedResult = await env.DB.prepare(`SELECT id FROM deleted_communities;`).all<{ id: string }>().catch(() => ({ results: [] }));
+    const deletedLocsResult = await env.DB.prepare(`SELECT id FROM deleted_locations;`).all<{ id: string }>().catch(() => ({ results: [] }));
 
     const deletedIds = new Set((deletedResult.results || []).map((r) => r.id));
+    const deletedLocIds = new Set([
+      ...(deletedLocsResult.results || []).map((r) => r.id),
+      ...Array.from(inMemoryDeletedLocs),
+    ]);
+
     let comms = (commsResult.results || []).filter((c) => !deletedIds.has(c.id));
-    const locs = locsResult.results || [];
+    const locs = (locsResult.results || []).filter((l) => !deletedLocIds.has(l.id));
 
     // Attach mapped locations to each community
     const enriched = comms.map((c) => ({

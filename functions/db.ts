@@ -211,6 +211,14 @@ export async function ensureD1Schema(db: D1Database): Promise<void> {
       );
     `).run().catch(() => {});
 
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deleted_locations (
+        id TEXT PRIMARY KEY,
+        community_id TEXT,
+        deleted_at TEXT NOT NULL
+      );
+    `).run().catch(() => {});
+
     // 10. Indexes for performance and uniqueness
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`).run().catch(() => {});
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);`).run().catch(() => {});

@@ -131,8 +131,25 @@ export const StorageService = {
     return readStorage<string[]>('mdb_deleted_community_ids_v1', []);
   },
 
+  getDeletedLocationIds(): string[] {
+    return readStorage<string[]>('mdb_deleted_location_ids_v1', []);
+  },
+
+  addDeletedLocationId(locId: string): void {
+    const ids = this.getDeletedLocationIds();
+    if (!ids.includes(locId)) {
+      writeStorage('mdb_deleted_location_ids_v1', [...ids, locId]);
+    }
+  },
+
+  removeDeletedLocationId(locId: string): void {
+    const ids = this.getDeletedLocationIds().filter((id) => id !== locId);
+    writeStorage('mdb_deleted_location_ids_v1', ids);
+  },
+
   getCommunities(): Community[] {
     const deletedIds = new Set(this.getDeletedCommunityIds());
+    const deletedLocIds = new Set(this.getDeletedLocationIds());
     let comms = readStorage<Community[]>(KEYS.COMMUNITIES, []);
     const isInit = localStorage.getItem('mdb_communities_initialized_v2');
 
@@ -142,10 +159,19 @@ export const StorageService = {
       comms = INITIAL_COMMUNITIES;
     }
 
-    let active = comms.filter((c) => !deletedIds.has(c.id));
+    let active = comms
+      .filter((c) => !deletedIds.has(c.id))
+      .map((c) => ({
+        ...c,
+        locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+      }));
+
     if (active.length === 0) {
       // Enterprise safety net: ensure at least one campus is always present to prevent render crashes
-      active = [INITIAL_COMMUNITIES[0]];
+      active = [{
+        ...INITIAL_COMMUNITIES[0],
+        locations: (INITIAL_COMMUNITIES[0].locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+      }];
       const updatedTombstones = this.getDeletedCommunityIds().filter((id) => id !== INITIAL_COMMUNITIES[0].id);
       writeStorage('mdb_deleted_community_ids_v1', updatedTombstones);
       writeStorage(KEYS.COMMUNITIES, active);
@@ -155,14 +181,22 @@ export const StorageService = {
 
   saveCommunities(communities: Community[]): void {
     const deletedIds = new Set(this.getDeletedCommunityIds());
-    const filtered = communities.filter((c) => !deletedIds.has(c.id));
+    const deletedLocIds = new Set(this.getDeletedLocationIds());
+    const filtered = communities
+      .filter((c) => !deletedIds.has(c.id))
+      .map((c) => ({
+        ...c,
+        locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
+      }));
     writeStorage(KEYS.COMMUNITIES, filtered);
   },
 
   addLocationToCommunity(communityId: string, location: CampusLocation): void {
+    this.removeDeletedLocationId(location.id);
     const comms = this.getCommunities().map((c) => {
       if (c.id === communityId) {
-        return { ...c, locations: [...c.locations, location] };
+        const without = (c.locations || []).filter((l) => l.id !== location.id);
+        return { ...c, locations: [...without, location] };
       }
       return c;
     });
@@ -183,11 +217,12 @@ export const StorageService = {
   },
 
   deleteLocationFromCommunity(communityId: string, locId: string): void {
+    this.addDeletedLocationId(locId);
     const comms = this.getCommunities().map((c) => {
       if (c.id === communityId) {
         return {
           ...c,
-          locations: c.locations.filter((loc) => loc.id !== locId),
+          locations: (c.locations || []).filter((loc) => loc.id !== locId),
         };
       }
       return c;

@@ -32,6 +32,7 @@
 | **FUNC-008**| Registration lacks full input validation | **P2 Medium** | **FIXED** | Normalized email and employee ID uniqueness constraints, campus validation, and release of rejected applicant ID locks. |
 | **FUNC-009**| Dynamic database schema creation in request handlers | **P2 Medium** | **FIXED** | Provided standalone `migration.sql` with idempotency guards and unified DDL script for one-time initialization. |
 | **FUNC-010**| Multiple competing backend implementations | **P1 High** | **FIXED** | Unified API contracts and session token semantics between Cloudflare Pages Functions and local development server (`server.ts`). |
+| **FUNC-011**| Campus spot deletion reappearance | **P1 High** | **FIXED** | Implemented persistent tombstone table (`deleted_locations`), local cache tombstone set (`mdb_deleted_location_ids_v1`), in-memory set in Express and Pages Functions, and optimistic UI updates to prevent spot reappearance on refresh or sync. |
 
 ---
 
