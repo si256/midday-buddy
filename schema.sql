@@ -1,7 +1,22 @@
 -- MidDay Buddy Production Database Schema for Cloudflare D1 / SQLite
 -- Backed by CoreReacher Enterprises
+-- Industrial-standard relational database schema with full foreign keys and cascading rules
 
--- 1. Users Table (with Employee Verification & Password Authentication)
+PRAGMA foreign_keys = ON;
+
+-- 1. Communities Table (Campus Hubs)
+CREATE TABLE IF NOT EXISTS communities (
+  id TEXT PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  city TEXT NOT NULL,
+  description TEXT,
+  member_count INTEGER DEFAULT 0,
+  active_breaks_count INTEGER DEFAULT 0,
+  created_at INTEGER
+);
+
+-- 2. Users Table (with Employee Verification & Password Authentication)
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
@@ -24,24 +39,14 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_bg TEXT,
   registered_at TEXT,
   approved_at TEXT,
-  created_at INTEGER
+  created_at INTEGER,
+  FOREIGN KEY (campus_id) REFERENCES communities(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_campus ON users(campus_id);
-
--- 2. Communities Table (Campus Hubs)
-CREATE TABLE IF NOT EXISTS communities (
-  id TEXT PRIMARY KEY,
-  slug TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  city TEXT NOT NULL,
-  description TEXT,
-  member_count INTEGER DEFAULT 0,
-  active_breaks_count INTEGER DEFAULT 0,
-  created_at INTEGER
-);
 
 -- 3. Locations Table (Spine Kiosks & Dining Courts)
 CREATE TABLE IF NOT EXISTS locations (
@@ -51,7 +56,8 @@ CREATE TABLE IF NOT EXISTS locations (
   zone TEXT NOT NULL,
   description TEXT,
   is_popular INTEGER DEFAULT 0,
-  created_at INTEGER
+  created_at INTEGER,
+  FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_locations_community ON locations(community_id);
@@ -67,10 +73,13 @@ CREATE TABLE IF NOT EXISTS breaks (
   custom_note TEXT,
   duration_minutes INTEGER DEFAULT 15,
   expires_at INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_breaks_community_expires ON breaks(community_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_breaks_user ON breaks(user_id);
 
 -- 5. Chat Messages Table
 CREATE TABLE IF NOT EXISTS messages (
@@ -79,10 +88,13 @@ CREATE TABLE IF NOT EXISTS messages (
   sender_id TEXT NOT NULL,
   sender_name TEXT NOT NULL,
   text TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES breaks(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
 
 -- 6. Password Reset Requests Table (Admin Approval Workflow)
 CREATE TABLE IF NOT EXISTS reset_requests (
@@ -94,10 +106,12 @@ CREATE TABLE IF NOT EXISTS reset_requests (
   status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'completed')),
   created_at TEXT NOT NULL,
   approved_at TEXT,
-  admin_id TEXT
+  admin_id TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_reset_requests_status ON reset_requests(status);
+CREATE INDEX IF NOT EXISTS idx_reset_requests_user ON reset_requests(user_id);
 
 -- 7. Audit Logs Table (Admin Security Logging)
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -111,6 +125,20 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   timestamp TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+
+-- 8. Metadata and Soft-Delete Tombstones
+CREATE TABLE IF NOT EXISTS system_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deleted_communities (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL
+);
+
 -- ==========================================
 -- INITIAL PRODUCTION SEED DATA
 -- ==========================================
@@ -119,7 +147,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT OR IGNORE INTO users (
   id, email, password, password_hash, name, employee_id, campus_id, role_title,
   status, role, password_reset_approved, must_change_password, bio, icebreaker,
-  dietary, social_battery, registered_at, approved_at
+  dietary, social_battery, registered_at, approved_at, created_at
 ) VALUES (
   'usr_admin',
   'admin@middaybuddy.com',
@@ -138,7 +166,8 @@ INSERT OR IGNORE INTO users (
   'Any',
   'Balanced Banter',
   '2026-11-01T00:00:00Z',
-  '2026-11-01T00:00:00Z'
+  '2026-11-01T00:00:00Z',
+  1730000000000
 );
 
 -- Campus Communities

@@ -146,12 +146,24 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
 
   const existingEmail = dbUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
   if (existingEmail) {
-    return res.status(409).json({ error: 'An account with this Email ID already exists.' });
+    if (existingEmail.status === 'rejected') {
+      dbUsers = dbUsers.filter((u) => u.id !== existingEmail.id);
+    } else if (existingEmail.status === 'pending_approval') {
+      return res.status(400).json({ error: 'Your registration with this Email ID is already awaiting admin approval.' });
+    } else {
+      return res.status(409).json({ error: 'An account with this Email ID already exists. Please sign in.' });
+    }
   }
 
   const existingEmp = dbUsers.find((u) => u.employeeId && u.employeeId.toUpperCase() === trimmedEmpId);
   if (existingEmp) {
-    return res.status(409).json({ error: 'This Employee ID is already registered to another account.' });
+    if (existingEmp.status === 'rejected') {
+      dbUsers = dbUsers.filter((u) => u.id !== existingEmp.id);
+    } else if (existingEmp.status === 'pending_approval') {
+      return res.status(400).json({ error: 'Your registration with this Employee ID is already awaiting admin approval.' });
+    } else {
+      return res.status(409).json({ error: 'This Employee ID is already registered to another active account. Please sign in.' });
+    }
   }
 
   const newUser: UserProfile = {
@@ -899,12 +911,36 @@ app.post('/api/users', (req: Request, res: Response) => {
   const normalizedEmpId = employeeId.trim().toUpperCase();
   const normalizedEmail = email.trim().toLowerCase();
 
-  if (dbUsers.some((u) => u.email.toLowerCase() === normalizedEmail)) {
-    return res.status(409).json({ error: 'This Email ID is already registered.' });
-  }
+  const existingUserIndex = dbUsers.findIndex((u) => 
+    u.email.toLowerCase() === normalizedEmail || 
+    (u.employeeId && u.employeeId.toUpperCase() === normalizedEmpId)
+  );
 
-  if (dbUsers.some((u) => u.employeeId?.toUpperCase() === normalizedEmpId)) {
-    return res.status(409).json({ error: 'This Employee ID is already registered to another account.' });
+  if (existingUserIndex !== -1) {
+    const existing = dbUsers[existingUserIndex];
+    existing.name = name.trim();
+    existing.email = normalizedEmail;
+    existing.employeeId = normalizedEmpId;
+    existing.role = role === 'community_admin' ? 'community_admin' : 'user';
+    existing.roleTitle = roleTitle?.trim() || (role === 'community_admin' ? 'Campus Administrator' : 'Software Engineer');
+    existing.campusId = campusId || 'comm_siruseri';
+    existing.status = 'approved';
+    existing.password = password || existing.password || 'Buddy@12345';
+    existing.approvedAt = new Date().toISOString();
+
+    const log: AuditLog = {
+      id: `log_${Date.now()}`,
+      adminId: adminId || 'admin',
+      adminName: adminName || 'Campus Admin',
+      action: 'ADD_MEMBER' as any,
+      targetUserId: existing.id,
+      targetUserName: existing.name,
+      details: `Admin verified and configured account for ${existing.name} (Emp ID: ${existing.employeeId})`,
+      timestamp: new Date().toISOString(),
+    };
+    dbAuditLogs.unshift(log);
+
+    return res.status(200).json({ success: true, user: existing, log });
   }
 
   const newUser: UserProfile = {

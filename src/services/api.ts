@@ -175,14 +175,30 @@ export const ApiService = {
     // Resilient Fallback: Local Authoritative Registration
     const trimmedEmail = userData.email.trim().toLowerCase();
     const trimmedEmpId = (userData.employeeId || '').trim().toUpperCase();
-    const existingUsers = StorageService.getUsers();
+    let existingUsers = StorageService.getUsers();
 
-    if (existingUsers.some((u) => u.email.toLowerCase() === trimmedEmail)) {
-      throw new Error('This Email ID is already registered. Please sign in or use another email.');
+    const existingEmailUser = existingUsers.find((u) => u.email.toLowerCase() === trimmedEmail);
+    if (existingEmailUser) {
+      if (existingEmailUser.status === 'rejected') {
+        existingUsers = existingUsers.filter((u) => u.id !== existingEmailUser.id);
+        StorageService.saveUsers(existingUsers);
+      } else if (existingEmailUser.status === 'pending_approval') {
+        throw new Error('Your registration with this Email ID is already awaiting admin approval.');
+      } else {
+        throw new Error('This Email ID is already registered. Please sign in or use another email.');
+      }
     }
 
-    if (trimmedEmpId && existingUsers.some((u) => u.employeeId?.toUpperCase() === trimmedEmpId)) {
-      throw new Error('This Employee ID is already registered. Please sign in or request password reset.');
+    const existingEmpUser = existingUsers.find((u) => u.employeeId?.toUpperCase() === trimmedEmpId);
+    if (existingEmpUser) {
+      if (existingEmpUser.status === 'rejected') {
+        existingUsers = existingUsers.filter((u) => u.id !== existingEmpUser.id);
+        StorageService.saveUsers(existingUsers);
+      } else if (existingEmpUser.status === 'pending_approval') {
+        throw new Error('Your registration with this Employee ID is already awaiting admin approval.');
+      } else {
+        throw new Error('This Employee ID is already registered to another active account. Please sign in.');
+      }
     }
 
     const newUserId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -913,6 +929,26 @@ export const ApiService = {
     };
 
     const currentUsers = StorageService.getUsers();
+    const existingIndex = currentUsers.findIndex((u) => 
+      u.email.toLowerCase() === newUser.email.toLowerCase() || 
+      (u.employeeId && u.employeeId.toUpperCase() === newUser.employeeId?.toUpperCase())
+    );
+
+    if (existingIndex !== -1) {
+      currentUsers[existingIndex] = { ...currentUsers[existingIndex], ...newUser, id: currentUsers[existingIndex].id };
+      StorageService.saveUsers(currentUsers);
+      return { success: true, user: currentUsers[existingIndex], log: {
+        id: `log_${Date.now()}`,
+        adminId: admin.id,
+        adminName: admin.name,
+        action: 'ADD_MEMBER' as any,
+        targetUserId: currentUsers[existingIndex].id,
+        targetUserName: currentUsers[existingIndex].name,
+        details: `Admin configured and verified account for ${currentUsers[existingIndex].name}`,
+        timestamp: nowISO,
+      }};
+    }
+
     StorageService.saveUsers([newUser, ...currentUsers]);
 
     const log: AuditLog = {

@@ -772,12 +772,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               Pending
                             </span>
                           )}
+                          {member.status === 'rejected' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                              Rejected
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* Quick Approve if Pending or Rejected */}
+                            {(member.status === 'pending_approval' || member.status === 'rejected') && (
+                              <button
+                                onClick={() => onApproveUser(member.id)}
+                                className="text-[11px] font-bold px-2 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300 transition-colors"
+                              >
+                                Approve
+                              </button>
+                            )}
+
                             {/* Role Toggle: Make Admin / Revoke Admin */}
-                            {!isMasterAdmin && (
+                            {!isMasterAdmin && member.status === 'approved' && (
                               <button
                                 onClick={() => onChangeUserRole(member.id, isCampusAdmin ? 'user' : 'community_admin')}
                                 title={isCampusAdmin ? 'Revoke Admin Privileges' : 'Promote to Campus Administrator'}

@@ -48,6 +48,8 @@ export const onRequestDelete: PagesFunction<AppEnv> = async (context) => {
       await env.DB.prepare(`DELETE FROM breaks WHERE user_id = ?;`).bind(userId).run().catch(() => {});
       // Also delete any reset requests
       await env.DB.prepare(`DELETE FROM reset_requests WHERE user_id = ?;`).bind(userId).run().catch(() => {});
+      // Also delete any chat messages sent by user
+      await env.DB.prepare(`DELETE FROM messages WHERE sender_id = ?;`).bind(userId).run().catch(() => {});
 
       const logId = `log_${Date.now()}`;
       await env.DB.prepare(`

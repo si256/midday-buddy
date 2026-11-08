@@ -37,7 +37,7 @@ export const onRequestOptions: PagesFunction<AppEnv> = async () => {
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
-  const { env } = context;
+  const { env, request } = context;
 
   if (!env.DB) {
     return new Response(JSON.stringify(DEFAULT_USERS), {
@@ -47,14 +47,40 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
   try {
     await ensureD1Schema(env.DB);
-    // Industrial standard: NEVER return raw passwords or password hashes in user listing
-    const { results } = await env.DB.prepare(
-      `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users WHERE status IS NULL OR status != 'rejected' ORDER BY created_at DESC`
-    ).all().catch(async () => {
-      return await env.DB!.prepare(`SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt FROM users WHERE status IS NULL OR status != 'rejected';`).all();
-    });
+    const url = new URL(request.url);
+    const statusParam = url.searchParams.get('status');
 
-    return new Response(JSON.stringify(results && results.length > 0 ? results : DEFAULT_USERS), {
+    let query = `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users`;
+    const params: string[] = [];
+
+    if (statusParam) {
+      query += ` WHERE status = ?`;
+      params.push(statusParam);
+    }
+
+    query += ` ORDER BY created_at DESC;`;
+
+    let results: any[] = [];
+    try {
+      const stmt = env.DB.prepare(query);
+      const res = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
+      results = res.results || [];
+    } catch {
+      // Fallback if created_at column is missing
+      const fallbackQuery = statusParam 
+        ? `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users WHERE status = ?;`
+        : `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users;`;
+      const fallbackStmt = env.DB.prepare(fallbackQuery);
+      const res = statusParam ? await fallbackStmt.bind(statusParam).all() : await fallbackStmt.all();
+      results = res.results || [];
+    }
+
+    // Always ensure Master Admin is included if the database returned 0 users
+    if (results.length === 0) {
+      results = DEFAULT_USERS;
+    }
+
+    return new Response(JSON.stringify(results), {
       headers: CORS_HEADERS,
     });
   } catch {
@@ -69,67 +95,128 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
   try {
     const body: any = await request.json().catch(() => ({}));
-    const id = body.id || `usr_${Date.now()}`;
+    const id = body.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const nowISO = new Date().toISOString();
+    const email = (body.email || '').trim().toLowerCase();
+    const employeeId = (body.employeeId || body.employee_id || '').trim().toUpperCase();
+    const name = (body.name || '').trim();
+    const role = body.role || 'user';
+    const roleTitle = body.roleTitle?.trim() || (role === 'community_admin' ? 'Campus Administrator' : 'Software Engineer');
+    const campusId = body.campusId || 'comm_siruseri';
+    const status = body.status || 'approved';
+    const password = body.password || 'Buddy@12345';
+    const adminId = body.adminId || 'admin';
+    const adminName = body.adminName || 'Campus Admin';
+
+    if (!email || !name) {
+      return new Response(JSON.stringify({ error: 'Name and Email ID are required.' }), {
+        status: 400,
+        headers: CORS_HEADERS,
+      });
+    }
 
     if (env.DB) {
       await ensureD1Schema(env.DB);
 
-      const tableInfo = await env.DB.prepare(`PRAGMA table_info(users);`).all<{ name: string }>().catch(() => ({ results: [] }));
-      const cols = new Set((tableInfo?.results || []).map((c) => c.name.toLowerCase()));
-
-      const insertCols: string[] = ['id', 'email', 'name'];
-      const insertVals: any[] = [id, body.email, body.name];
-
-      if (cols.has('employee_id')) {
-        insertCols.push('employee_id');
-        insertVals.push(body.employeeId || 'EMP-000');
-      }
-      if (cols.has('campus_id')) {
-        insertCols.push('campus_id');
-        insertVals.push(body.campusId || 'comm_siruseri');
-      }
-      if (cols.has('role_title')) {
-        insertCols.push('role_title');
-        insertVals.push(body.roleTitle || 'Software Engineer');
-      }
-      if (cols.has('status')) {
-        insertCols.push('status');
-        insertVals.push(body.status || 'pending_approval');
-      }
-      if (cols.has('role')) {
-        insertCols.push('role');
-        insertVals.push(body.role || 'user');
-      }
-      if (cols.has('password') && body.password) {
-        insertCols.push('password');
-        insertVals.push(body.password);
-      }
-      if (cols.has('registered_at')) {
-        insertCols.push('registered_at');
-        insertVals.push(nowISO);
-      }
-      if (cols.has('created_at')) {
-        insertCols.push('created_at');
-        insertVals.push(Date.now());
+      // Check if user with this email or employee ID already exists
+      let existingUser: any = null;
+      if (employeeId) {
+        existingUser = await env.DB.prepare(
+          `SELECT id, email, employee_id, status FROM users WHERE LOWER(email) = ? OR UPPER(employee_id) = ?;`
+        ).bind(email, employeeId).first().catch(() => null);
+      } else {
+        existingUser = await env.DB.prepare(
+          `SELECT id, email, employee_id, status FROM users WHERE LOWER(email) = ?;`
+        ).bind(email).first().catch(() => null);
       }
 
-      const placeholders = insertCols.map(() => '?').join(', ');
-      await env.DB.prepare(
-        `INSERT INTO users (${insertCols.join(', ')}) VALUES (${placeholders})`
-      ).bind(...insertVals).run();
+      if (existingUser) {
+        // Safe update: Admin provisioning updates the existing record and sets status to approved
+        await env.DB.prepare(`
+          UPDATE users 
+          SET name = ?, email = ?, employee_id = ?, role = ?, role_title = ?, campus_id = ?, status = 'approved', password = ?, password_hash = ?, approved_at = ?
+          WHERE id = ?;
+        `).bind(name, email, employeeId || null, role, roleTitle, campusId, password, password, nowISO, existingUser.id).run();
+
+        const logId = `log_${Date.now()}`;
+        await env.DB.prepare(`
+          INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
+          VALUES (?, ?, ?, 'ADD_MEMBER', ?, ?, ?, ?);
+        `).bind(logId, adminId, adminName, existingUser.id, name, `Admin updated and verified member account for ${name} (Emp ID: ${employeeId})`, nowISO).run().catch(() => {});
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            user: {
+              id: existingUser.id,
+              name,
+              email,
+              employeeId,
+              role,
+              roleTitle,
+              campusId,
+              status: 'approved',
+              registeredAt: nowISO,
+              approvedAt: nowISO,
+            },
+            log: {
+              id: logId,
+              adminId,
+              adminName,
+              action: 'ADD_MEMBER',
+              targetUserId: existingUser.id,
+              targetUserName: name,
+              details: `Admin verified and configured member account for ${name}`,
+              timestamp: nowISO,
+            },
+          }),
+          { status: 200, headers: CORS_HEADERS }
+        );
+      }
+
+      // If does not exist, insert cleanly
+      await env.DB.prepare(`
+        INSERT INTO users (
+          id, email, password, password_hash, name, employee_id, campus_id, role_title,
+          status, role, password_reset_approved, must_change_password, registered_at, approved_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, 0, 0, ?, ?, ?);
+      `).bind(
+        id, email, password, password, name, employeeId || null, campusId, roleTitle,
+        role, nowISO, nowISO, Date.now()
+      ).run();
+
+      const logId = `log_${Date.now()}`;
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
+        VALUES (?, ?, ?, 'ADD_MEMBER', ?, ?, ?, ?);
+      `).bind(logId, adminId, adminName, id, name, `Admin created verified member account for ${name} (Emp ID: ${employeeId})`, nowISO).run().catch(() => {});
     }
 
     return new Response(
       JSON.stringify({
-        id,
-        name: body.name,
-        email: body.email,
-        campusId: body.campusId,
-        roleTitle: body.roleTitle,
-        status: body.status || 'pending_approval',
-        role: body.role || 'user',
-        registeredAt: nowISO,
+        success: true,
+        user: {
+          id,
+          name,
+          email,
+          employeeId,
+          role,
+          roleTitle,
+          campusId,
+          status: 'approved',
+          registeredAt: nowISO,
+          approvedAt: nowISO,
+        },
+        log: {
+          id: `log_${Date.now()}`,
+          adminId,
+          adminName,
+          action: 'ADD_MEMBER',
+          targetUserId: id,
+          targetUserName: name,
+          details: `Admin created verified member account for ${name}`,
+          timestamp: nowISO,
+        },
       }),
       { status: 201, headers: CORS_HEADERS }
     );

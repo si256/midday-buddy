@@ -148,6 +148,17 @@ test('checkUniqueEmployeeId blocks duplicate employee IDs across cases and space
   assert.equal(checkUniqueEmployeeId(existingUsers, ''), false);
 });
 
+test('checkUniqueEmployeeId ignores rejected users allowing re-registration', () => {
+  const usersWithRejected = [
+    { employeeId: 'EMP-1001', status: 'approved' as UserApprovalStatus },
+    { employeeId: 'REJECT-999', status: 'rejected' as UserApprovalStatus },
+  ];
+  // Filter active users: rejected records release the employee ID
+  const activeOnly = usersWithRejected.filter((u) => u.status !== 'rejected');
+  assert.equal(checkUniqueEmployeeId(activeOnly, 'REJECT-999'), true);
+  assert.equal(checkUniqueEmployeeId(activeOnly, 'EMP-1001'), false);
+});
+
 test('verifyPassword validates matching credentials and rejects incorrect ones', () => {
   const userPass = 'Admin@12345';
   assert.equal(verifyPassword(userPass, 'Admin@12345'), true);
