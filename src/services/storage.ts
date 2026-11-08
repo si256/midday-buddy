@@ -106,6 +106,11 @@ export const StorageService = {
 
   // --- SESSIONS ---
   getCurrentSessionUser(): UserProfile | null {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('mdb_token_v2') : null;
+    if (!token) {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(KEYS.SESSION);
+      return null;
+    }
     const userId = localStorage.getItem(KEYS.SESSION);
     if (!userId) {
       return null;

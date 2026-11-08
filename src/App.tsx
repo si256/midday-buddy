@@ -145,12 +145,14 @@ export default function App() {
   // Load & periodically sync with Real Authoritative Backend API
   const syncWithBackend = React.useCallback(async () => {
     try {
+      const token = ApiService.getToken();
+      const isAdmin = Boolean(token) && (currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin');
       const [comms, users, breaks, logs, resets] = await Promise.all([
         ApiService.getCommunities(),
         ApiService.getUsers(),
         ApiService.getBreaks(),
-        ApiService.getAuditLogs(),
-        ApiService.getResetRequests().catch(() => []),
+        isAdmin ? ApiService.getAuditLogs().catch(() => []) : Promise.resolve([]),
+        isAdmin ? ApiService.getResetRequests().catch(() => []) : Promise.resolve([]),
       ]);
       const deletedCommIds = new Set(StorageService.getDeletedCommunityIds());
       let validComms = comms.filter((c) => !deletedCommIds.has(c.id));
@@ -164,8 +166,10 @@ export default function App() {
       });
       setAllUsers(users);
       setBreakPosts(breaks);
-      setAuditLogs(logs);
-      setResetRequests(resets || []);
+      if (isAdmin) {
+        setAuditLogs(logs);
+        setResetRequests(resets || []);
+      }
 
       if (currentUser) {
         const notifs = await ApiService.getNotifications(currentUser.id);
@@ -180,10 +184,52 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Verify active session on initial mount
+  React.useEffect(() => {
+    const token = ApiService.getToken();
+    if (token) {
+      ApiService.me()
+        .then((user) => {
+          if (user) {
+            setCurrentUser(user);
+            StorageService.setCurrentSessionUser(user);
+          }
+        })
+        .catch(() => {
+          // Token is expired or invalid on server
+          ApiService.setToken(null);
+          setCurrentUser(null);
+          StorageService.setCurrentSessionUser(null);
+        });
+    } else {
+      // Clear stale local session state if no server token is present
+      setCurrentUser(null);
+      StorageService.setCurrentSessionUser(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     syncWithBackend();
-    const interval = setInterval(syncWithBackend, 4000);
-    return () => clearInterval(interval);
+
+    // Visibility-aware polling: pause requests when tab is hidden, resume on focus
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        syncWithBackend();
+      }
+    }, 6000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        syncWithBackend();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [syncWithBackend]);
 
   // Sync session & notifications when currentUser changes

@@ -1060,7 +1060,30 @@ app.post('/api/notifications/mark-read', (req: Request, res: Response) => {
 });
 
 app.get('/api/audit-logs', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: missing session token' });
+  }
+  const token = authHeader.split(' ')[1];
+  const userId = dbSessions[token];
+  if (!userId) {
+    return res.status(401).json({ error: 'Invalid or expired session token' });
+  }
+  const user = dbUsers.find((u) => u.id === userId);
+  if (!user || (user.role !== 'community_admin' && user.role !== 'platform_admin')) {
+    return res.status(403).json({ error: 'Forbidden: Insufficient privileges to view audit logs.' });
+  }
   res.json(dbAuditLogs);
+});
+
+// Explicit 404 handler for unhandled API routes
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found',
+    path: req.path,
+    timestamp: Date.now(),
+  });
 });
 
 // ==========================================

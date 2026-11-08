@@ -1,5 +1,6 @@
 import type { AppEnv, PagesFunction } from '../../env';
 import { ensureD1Schema } from '../../db';
+import { hashPassword } from '../../crypto';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -110,20 +111,19 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
         }
       }
 
-      // 3. Dynamically inspect table columns to guarantee error-free INSERT
+      // 3. Hash password using PBKDF2
+      const hashedPassword = await hashPassword(password);
+
+      // 4. Dynamically inspect table columns to guarantee error-free INSERT
       const tableInfo = await env.DB.prepare(`PRAGMA table_info(users);`).all<{ name: string }>().catch(() => ({ results: [] }));
       const cols = new Set((tableInfo?.results || []).map((c) => c.name.toLowerCase()));
 
       const insertCols: string[] = ['id', 'email'];
       const insertVals: any[] = [newUserId, trimmedEmail];
 
-      if (cols.has('password')) {
-        insertCols.push('password');
-        insertVals.push(password);
-      }
       if (cols.has('password_hash')) {
         insertCols.push('password_hash');
-        insertVals.push(password);
+        insertVals.push(hashedPassword);
       }
       if (cols.has('name')) {
         insertCols.push('name');

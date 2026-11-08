@@ -88,11 +88,8 @@ export const ApiService = {
         return data;
       }
     } catch (err: any) {
-      // If error is a business logic error (e.g. 401 Invalid Credentials), rethrow
-      // unless it's master admin credentials against an unseeded remote D1 instance
-      if (trimmedEmail === 'admin@middaybuddy.com' && credentials.password === 'Admin@12345') {
-        // Fall through to authoritative local master admin
-      } else if (err.message && !err.message.includes('405') && !err.message.includes('Failed to fetch') && !err.message.includes('404')) {
+      // If error is an authoritative business logic error (e.g. 401 Invalid Credentials, 400, 403), rethrow directly
+      if (err.message && !err.message.includes('405') && !err.message.includes('Failed to fetch') && !err.message.includes('404')) {
         throw err;
       }
     }
@@ -289,8 +286,13 @@ export const ApiService = {
   },
 
   async getResetRequests(): Promise<any[]> {
+    const token = this.getToken();
+    if (!token) return [];
+
     try {
-      const res = await fetch(`${API_BASE}/auth/reset-requests`);
+      const res = await fetch(`${API_BASE}/auth/reset-requests`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         return await handleResponse<any[]>(res);
       }
@@ -308,7 +310,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/auth/approve-reset/${encodeURIComponent(requestId)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
 
@@ -346,7 +348,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/auth/set-new-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ userId, newPassword }),
       });
 
@@ -369,6 +371,10 @@ export const ApiService = {
       success: true,
       message: 'Password updated successfully. Please sign in with your new password.',
     };
+  },
+
+  async me(): Promise<UserProfile> {
+    return this.getMe();
   },
 
   async getMe(): Promise<UserProfile> {
@@ -442,7 +448,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ ...location, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -458,7 +464,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations/${encodeURIComponent(locId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ ...location, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -476,7 +482,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(communityId)}/locations/${encodeURIComponent(locId)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -492,7 +498,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ ...data, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -518,7 +524,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ ...data, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -536,7 +542,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/communities/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -556,7 +562,9 @@ export const ApiService = {
       if (params?.zone) query.set('zone', params.zone);
       if (params?.activeNow) query.set('activeNow', 'true');
 
-      const res = await fetch(`${API_BASE}/breaks?${query.toString()}`);
+      const res = await fetch(`${API_BASE}/breaks?${query.toString()}`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         const data = await handleResponse<BreakPost[]>(res);
         StorageService.saveBreaks(data);
@@ -585,7 +593,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/breaks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify(data),
       });
       if (!isTransportFailure(res.status)) {
@@ -626,6 +634,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/breaks/${encodeURIComponent(postId)}/extend`, {
         method: 'POST',
+        headers: this.getHeaders(),
       });
       if (!isTransportFailure(res.status)) {
         return await handleResponse(res);
@@ -646,6 +655,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/breaks/${encodeURIComponent(postId)}/complete`, {
         method: 'POST',
+        headers: this.getHeaders(),
       });
       if (!isTransportFailure(res.status)) {
         return await handleResponse(res);
@@ -665,7 +675,9 @@ export const ApiService = {
   // --- USERS & ADMIN AUTH ---
   async getUsers(): Promise<UserProfile[]> {
     try {
-      const res = await fetch(`${API_BASE}/users`);
+      const res = await fetch(`${API_BASE}/users`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         const users = await handleResponse<UserProfile[]>(res);
         StorageService.saveUsers(users);
@@ -678,7 +690,9 @@ export const ApiService = {
 
   async getUserById(id: string): Promise<UserProfile> {
     try {
-      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(id)}`);
+      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(id)}`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         return await handleResponse<UserProfile>(res);
       }
@@ -710,7 +724,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -743,7 +757,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/reject`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name, reason }),
       });
       if (!isTransportFailure(res.status)) {
@@ -774,7 +788,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/toggle-status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -806,7 +820,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify(updates),
       });
       if (!isTransportFailure(res.status)) {
@@ -825,7 +839,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/role`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ role: newRole, adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -857,7 +871,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -896,7 +910,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/users`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ ...userData, status: 'approved', adminId: admin.id, adminName: admin.name }),
       });
       if (!isTransportFailure(res.status)) {
@@ -969,7 +983,9 @@ export const ApiService = {
   // --- CHAT CONVERSATIONS ---
   async getMessages(conversationId: string): Promise<ChatMessage[]> {
     try {
-      const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(conversationId)}`);
+      const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(conversationId)}`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         return await handleResponse<ChatMessage[]>(res);
       }
@@ -982,7 +998,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(conversationId)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify(message),
       });
       if (!isTransportFailure(res.status)) {
@@ -1007,7 +1023,9 @@ export const ApiService = {
   async getNotifications(userId?: string): Promise<AppNotification[]> {
     try {
       const url = userId ? `${API_BASE}/notifications?userId=${encodeURIComponent(userId)}` : `${API_BASE}/notifications`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         return await handleResponse<AppNotification[]>(res);
       }
@@ -1020,7 +1038,7 @@ export const ApiService = {
     try {
       const res = await fetch(`${API_BASE}/notifications/mark-read`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify({ userId }),
       });
       if (!isTransportFailure(res.status)) {
@@ -1033,8 +1051,15 @@ export const ApiService = {
   },
 
   async getAuditLogs(): Promise<AuditLog[]> {
+    const token = this.getToken();
+    if (!token) {
+      return StorageService.getAuditLogs();
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/audit-logs`);
+      const res = await fetch(`${API_BASE}/audit-logs`, {
+        headers: this.getHeaders(),
+      });
       if (!isTransportFailure(res.status)) {
         return await handleResponse<AuditLog[]>(res);
       }

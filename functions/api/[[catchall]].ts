@@ -24,15 +24,17 @@ export const onRequest: PagesFunction<AppEnv> = async (context) => {
     });
   }
 
-  // Gracefully handle any uncaught API endpoint so it never returns 405 Method Not Allowed
+  const url = new URL(request.url);
+
   return new Response(
     JSON.stringify({
-      status: 'ok',
-      message: 'Cloudflare Pages API fallback',
+      success: false,
+      error: 'Endpoint not found',
+      path: url.pathname,
       timestamp: Date.now(),
     }),
     {
-      status: 200,
+      status: 404,
       headers: CORS_HEADERS,
     }
   );

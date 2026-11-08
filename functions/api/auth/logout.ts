@@ -1,4 +1,6 @@
 import type { AppEnv, PagesFunction } from '../../env';
+import { extractToken } from '../../auth';
+import { hashToken } from '../../crypto';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -14,8 +16,20 @@ export const onRequestOptions: PagesFunction<AppEnv> = async () => {
   });
 };
 
-export const onRequestPost: PagesFunction<AppEnv> = async () => {
-  return new Response(JSON.stringify({ success: true }), {
+export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
+  const { env, request } = context;
+  const token = extractToken(request);
+
+  if (token && env.DB) {
+    try {
+      const tokenHash = await hashToken(token);
+      await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?;`).bind(tokenHash).run();
+    } catch {
+      // Continue even if session deletion fails
+    }
+  }
+
+  return new Response(JSON.stringify({ success: true, message: 'Logged out successfully.' }), {
     status: 200,
     headers: CORS_HEADERS,
   });

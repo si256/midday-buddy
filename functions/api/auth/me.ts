@@ -1,4 +1,6 @@
 import type { AppEnv, PagesFunction } from '../../env';
+import { ensureD1Schema } from '../../db';
+import { getSessionUser } from '../../auth';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -15,10 +17,15 @@ export const onRequestOptions: PagesFunction<AppEnv> = async () => {
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
-  const { request } = context;
-  const authHeader = request.headers.get('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  const { env, request } = context;
+
+  if (env.DB) {
+    await ensureD1Schema(env.DB);
+  }
+
+  const user = await getSessionUser(request, env.DB);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized: Session is invalid or has expired.' }), {
       status: 401,
       headers: CORS_HEADERS,
     });
@@ -26,13 +33,7 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
   return new Response(
     JSON.stringify({
-      user: {
-        id: 'usr_admin',
-        email: 'admin@middaybuddy.com',
-        name: 'System Administrator',
-        role: 'community_admin',
-        status: 'approved',
-      },
+      user,
     }),
     { status: 200, headers: CORS_HEADERS }
   );

@@ -169,6 +169,32 @@ export async function ensureD1Schema(db: D1Database): Promise<void> {
       );
     `).run().catch(() => {});
 
+    // 9. Ensure 'sessions' table exists for server-authoritative token validation
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `).run().catch(() => {});
+
+    // 10. Ensure 'notifications' table exists
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        reference_id TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `).run().catch(() => {});
+
     // 9. Ensure 'system_metadata' and 'deleted_communities' tables exist
     await db.prepare(`
       CREATE TABLE IF NOT EXISTS system_metadata (

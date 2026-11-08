@@ -95,7 +95,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@middaybuddy.com"
+                    placeholder="e.g. admin@company.com"
                     className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-10 pr-3 text-xs text-slate-900 focus:border-orange-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
