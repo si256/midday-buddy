@@ -1,30 +1,24 @@
 import type { AppEnv, PagesFunction } from '../../../env';
 import { ensureD1Schema } from '../../../db';
-import { requireAuth } from '../../../auth';
+import { requireAuth, getCorsHeaders } from '../../../auth';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, params, request } = context;
   const breakId = decodeURIComponent(params.id as string);
+  const cors = getCorsHeaders(request);
 
   try {
     if (!env.DB) {
       return new Response(JSON.stringify({ error: 'Database service is unavailable.' }), {
         status: 503,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
@@ -38,7 +32,7 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     if (!post) {
       return new Response(JSON.stringify({ error: 'Break not found' }), {
         status: 404,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
@@ -46,12 +40,12 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     if (post.user_id !== user.id && user.role !== 'community_admin' && user.role !== 'platform_admin') {
       return new Response(JSON.stringify({ error: 'Forbidden: You can only extend your own breaks.' }), {
         status: 403,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
     const newExpiresAt = post.expires_at + 10 * 60 * 1000;
-    const newDuration = post.duration_minutes + 10;
+    const newDuration = (post.duration_minutes || 15) + 10;
 
     await env.DB.prepare(
       `UPDATE breaks SET expires_at = ?, duration_minutes = ? WHERE id = ?;`
@@ -66,13 +60,13 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
           durationMinutes: newDuration,
         },
       }),
-      { status: 200, headers: CORS_HEADERS }
+      { status: 200, headers: cors }
     );
   } catch (err: any) {
     if (err instanceof Response) return err;
     return new Response(JSON.stringify({ error: err.message || 'Failed to extend break' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };

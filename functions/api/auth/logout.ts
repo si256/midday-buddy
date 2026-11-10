@@ -1,36 +1,41 @@
 import type { AppEnv, PagesFunction } from '../../env';
-import { extractToken } from '../../auth';
+import { ensureD1Schema } from '../../db';
+import { extractToken, getCorsHeaders, clearSessionCookie } from '../../auth';
 import { hashToken } from '../../crypto';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
-  const token = extractToken(request);
+  const cors = getCorsHeaders(request);
 
-  if (token && env.DB) {
-    try {
+  try {
+    const token = extractToken(request);
+    if (token && env.DB) {
+      await ensureD1Schema(env.DB);
       const tokenHash = await hashToken(token);
-      await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?;`).bind(tokenHash).run();
-    } catch {
-      // Continue even if session deletion fails
+      await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?;`).bind(tokenHash).run().catch(() => {});
     }
-  }
 
-  return new Response(JSON.stringify({ success: true, message: 'Logged out successfully.' }), {
-    status: 200,
-    headers: CORS_HEADERS,
-  });
+    return new Response(JSON.stringify({ success: true, message: 'Logged out successfully.' }), {
+      status: 200,
+      headers: {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      },
+    });
+  }
 };

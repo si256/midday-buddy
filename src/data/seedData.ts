@@ -116,28 +116,7 @@ export const INITIAL_COMMUNITIES: Community[] = [
   },
 ];
 
-export const INITIAL_USERS: UserProfile[] = [
-  {
-    id: 'usr_admin',
-    email: 'admin@middaybuddy.com',
-    password: 'Admin@12345',
-    name: 'System Administrator',
-    employeeId: 'ADM-001',
-    roleTitle: 'Platform Administrator',
-    campusId: 'comm_siruseri',
-    avatarSeed: 'Admin',
-    avatarBgColor: 'bg-indigo-600',
-    bio: 'Platform administration and member verification for MidDay Buddy.',
-    icebreaker: 'Welcome to MidDay Buddy backed by CoreReacher Enterprises!',
-    interests: ['Workplace Well-being', 'Technology', 'Community'],
-    dietary: 'Any',
-    socialBattery: 'Balanced Banter',
-    role: 'community_admin',
-    status: 'approved',
-    registeredAt: '2026-11-01T00:00:00Z',
-    approvedAt: '2026-11-01T00:00:00Z',
-  },
-];
+export const INITIAL_USERS: UserProfile[] = [];
 
 export const INITIAL_BREAK_POSTS: BreakPost[] = [];
 

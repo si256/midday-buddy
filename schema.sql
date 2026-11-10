@@ -1,10 +1,10 @@
--- MidDay Buddy Production Database Schema for Cloudflare D1 / SQLite
+-- ============================================================================
+-- MidDay Buddy D1 Production Schema
 -- Backed by CoreReacher Enterprises
--- Industrial-standard relational database schema with full foreign keys and cascading rules
+-- ============================================================================
 
 PRAGMA foreign_keys = ON;
 
--- 1. Communities Table (Campus Hubs)
 CREATE TABLE IF NOT EXISTS communities (
   id TEXT PRIMARY KEY,
   slug TEXT UNIQUE NOT NULL,
@@ -13,17 +13,15 @@ CREATE TABLE IF NOT EXISTS communities (
   description TEXT,
   member_count INTEGER DEFAULT 0,
   active_breaks_count INTEGER DEFAULT 0,
-  created_at INTEGER
+  created_at INTEGER NOT NULL
 );
 
--- 2. Users Table (with Employee Verification & Password Authentication)
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
-  password TEXT,
-  password_hash TEXT,
+  password_hash TEXT NOT NULL,
   name TEXT NOT NULL,
-  employee_id TEXT,
+  employee_id TEXT UNIQUE,
   campus_id TEXT DEFAULT 'comm_siruseri',
   role_title TEXT DEFAULT 'Software Engineer',
   status TEXT DEFAULT 'pending_approval' CHECK(status IN ('pending_approval', 'approved', 'rejected', 'suspended')),
@@ -39,16 +37,10 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_bg TEXT,
   registered_at TEXT,
   approved_at TEXT,
-  created_at INTEGER,
+  created_at INTEGER NOT NULL,
   FOREIGN KEY (campus_id) REFERENCES communities(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);
-CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
-CREATE INDEX IF NOT EXISTS idx_users_campus ON users(campus_id);
-
--- 3. Locations Table (Spine Kiosks & Dining Courts)
 CREATE TABLE IF NOT EXISTS locations (
   id TEXT PRIMARY KEY,
   community_id TEXT NOT NULL,
@@ -56,13 +48,10 @@ CREATE TABLE IF NOT EXISTS locations (
   zone TEXT NOT NULL,
   description TEXT,
   is_popular INTEGER DEFAULT 0,
-  created_at INTEGER,
+  created_at INTEGER NOT NULL,
   FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_locations_community ON locations(community_id);
-
--- 4. Breaks Table (Live Companions & Activity Posts)
 CREATE TABLE IF NOT EXISTS breaks (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -78,10 +67,6 @@ CREATE TABLE IF NOT EXISTS breaks (
   FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_breaks_community_expires ON breaks(community_id, expires_at);
-CREATE INDEX IF NOT EXISTS idx_breaks_user ON breaks(user_id);
-
--- 5. Chat Messages Table
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
@@ -93,10 +78,14 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
--- 6. Password Reset Requests Table (Admin Approval Workflow)
 CREATE TABLE IF NOT EXISTS reset_requests (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -110,10 +99,18 @@ CREATE TABLE IF NOT EXISTS reset_requests (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_reset_requests_status ON reset_requests(status);
-CREATE INDEX IF NOT EXISTS idx_reset_requests_user ON reset_requests(user_id);
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  read INTEGER DEFAULT 0,
+  data TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
--- 7. Audit Logs Table (Admin Security Logging)
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   admin_id TEXT NOT NULL,
@@ -125,63 +122,30 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   timestamp TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+CREATE TABLE IF NOT EXISTS deleted_communities (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL
+);
 
--- 8. Metadata and Soft-Delete Tombstones
+CREATE TABLE IF NOT EXISTS deleted_locations (
+  id TEXT PRIMARY KEY,
+  community_id TEXT,
+  deleted_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS system_metadata (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS deleted_communities (
-  id TEXT PRIMARY KEY,
-  deleted_at TEXT NOT NULL
-);
-
--- ==========================================
--- INITIAL PRODUCTION SEED DATA
--- ==========================================
-
--- Master Administrator
-INSERT OR IGNORE INTO users (
-  id, email, password, password_hash, name, employee_id, campus_id, role_title,
-  status, role, password_reset_approved, must_change_password, bio, icebreaker,
-  dietary, social_battery, registered_at, approved_at, created_at
-) VALUES (
-  'usr_admin',
-  'admin@middaybuddy.com',
-  'Admin@12345',
-  'Admin@12345',
-  'System Administrator',
-  'ADM-001',
-  'comm_siruseri',
-  'Platform Administrator',
-  'approved',
-  'community_admin',
-  0,
-  0,
-  'Platform administration and member verification for MidDay Buddy.',
-  'Welcome to MidDay Buddy backed by CoreReacher Enterprises!',
-  'Any',
-  'Balanced Banter',
-  '2026-11-01T00:00:00Z',
-  '2026-11-01T00:00:00Z',
-  1730000000000
-);
-
--- Campus Communities
-INSERT OR IGNORE INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
-VALUES 
-  ('comm_siruseri', 'siruseri-campus', 'TCS Siruseri Campus', 'Chennai', 'The iconic 70-acre butterfly campus with the 400m Central Spine and vibrant cafeterias.', 342, 14, 1730000000000),
-  ('comm_tidel', 'tidel-park', 'Tidel Park Campus', 'Chennai', 'Premier IT landmark on OMR with multi-floor food courts and garden patio.', 185, 6, 1730000000000),
-  ('comm_manyata', 'manyata-tech-park', 'Manyata Tech Park', 'Bengaluru', 'Dynamic campus hub in North Bengaluru with rooftop cafes and sports courts.', 220, 9, 1730000000000);
-
--- Cafeteria & Spine Locations
-INSERT OR IGNORE INTO locations (id, community_id, name, zone, description, is_popular, created_at)
-VALUES
-  ('loc_spine_chai_core', 'comm_siruseri', 'Spine Chai Point (Near Core)', 'Central Spine', 'The most popular ginger chai and filter coffee kiosk by the central tower.', 1, 1730000000000),
-  ('loc_spine_ccd', 'comm_siruseri', 'Café Coffee Day (Spine East)', 'Central Spine', 'Quiet coffee seating with air conditioning and espresso.', 0, 1730000000000),
-  ('loc_fc1', 'comm_siruseri', 'Food Court 1 (South Indian & Thalis)', 'Food Court 1', 'Ground floor main cafeteria featuring hot dosas, Kerala meals, and thalis.', 1, 1730000000000),
-  ('loc_fc2', 'comm_siruseri', 'Food Court 2 (Multi-Cuisine & Biryani)', 'Food Court 2', 'Executive cafeteria with North Indian gravies, rolls, and Hyderabad biryani.', 1, 1730000000000),
-  ('loc_gazebo', 'comm_siruseri', 'Central Lawn Gazebo', 'Outdoor Greens', 'Shaded open-air seating for breezy midday discussions and walks.', 0, 1730000000000);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+CREATE INDEX IF NOT EXISTS idx_users_campus ON users(campus_id);
+CREATE INDEX IF NOT EXISTS idx_locations_community ON locations(community_id);
+CREATE INDEX IF NOT EXISTS idx_breaks_community_expires ON breaks(community_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_breaks_user ON breaks(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_reset_requests_status ON reset_requests(status);

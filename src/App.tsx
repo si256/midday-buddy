@@ -23,6 +23,7 @@ import {
   BreakPost, 
   AuditLog, 
   BreakType,
+  BreakAvailabilityStatus,
   AppNotification,
   PasswordResetRequest,
   UserRole
@@ -297,25 +298,32 @@ export default function App() {
   // Real Admin Actions (Backed by Server API)
   const handleApproveUser = async (userId: string) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { user: updatedUser, log } = await ApiService.approveUser(userId, adminInfo);
-      setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
-      setAuditLogs((prev) => [log, ...prev]);
-      if (currentUser?.id === userId) {
-        setCurrentUser(updatedUser);
+      const { user: updatedUser, log } = await ApiService.approveUser(userId);
+      if (updatedUser) {
+        setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+        if (currentUser?.id === userId) {
+          setCurrentUser(updatedUser);
+        }
+        showToast(`✅ Approved ${updatedUser.name}! Profile is now verified.`);
+      } else {
+        setAllUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: 'approved' } : u)));
+        showToast(`✅ User approved!`);
       }
-      showToast(`✅ Approved ${updatedUser.name}! Profile is now verified.`);
+      if (log) {
+        setAuditLogs((prev) => [log, ...prev]);
+      }
     } catch (err: any) {
       showToast(`Approval failed: ${err.message}`);
     }
   };
 
-  const handleRejectUser = async (userId: string, reason: string) => {
+  const handleRejectUser = async (userId: string, _reason: string) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { log } = await ApiService.rejectUser(userId, adminInfo, reason);
+      const { log } = await ApiService.rejectUser(userId);
       setAllUsers((prev) => prev.filter((u) => u.id !== userId));
-      setAuditLogs((prev) => [log, ...prev]);
+      if (log) {
+        setAuditLogs((prev) => [log, ...prev]);
+      }
       showToast(`Rejected registration.`);
     } catch (err: any) {
       showToast(`Reject failed: ${err.message}`);
@@ -324,14 +332,20 @@ export default function App() {
 
   const handleToggleUserStatus = async (userId: string, newStatus: 'approved' | 'suspended') => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { user: updatedUser, log } = await ApiService.toggleUserStatus(userId, adminInfo);
-      setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
-      setAuditLogs((prev) => [log, ...prev]);
-      if (currentUser?.id === userId) {
-        setCurrentUser(updatedUser);
+      const { user: updatedUser, log } = await ApiService.toggleUserStatus(userId);
+      if (updatedUser) {
+        setAllUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+        if (currentUser?.id === userId) {
+          setCurrentUser(updatedUser);
+        }
+        showToast(`Updated status for ${updatedUser.name} to ${newStatus}.`);
+      } else {
+        setAllUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u)));
+        showToast(`Updated user status to ${newStatus}.`);
       }
-      showToast(`Updated status for ${updatedUser.name} to ${newStatus}.`);
+      if (log) {
+        setAuditLogs((prev) => [log, ...prev]);
+      }
     } catch (err: any) {
       showToast(`Status update failed: ${err.message}`);
     }
@@ -339,8 +353,7 @@ export default function App() {
 
   const handleCreateCommunity = async (data: { name: string; city: string; description?: string }) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { community } = await ApiService.createCommunity(data, adminInfo);
+      const { community } = await ApiService.createCommunity(data);
       setCommunities((prev) => [...prev, community]);
       showToast(`Created new campus "${community.name}"!`);
       await syncWithBackend();
@@ -351,8 +364,7 @@ export default function App() {
 
   const handleUpdateCommunity = async (id: string, data: { name: string; city: string; description?: string }) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { community } = await ApiService.updateCommunity(id, data, adminInfo);
+      const { community } = await ApiService.updateCommunity(id, data);
       setCommunities((prev) => prev.map((c) => (c.id === id ? { ...c, ...community } : c)));
       if (activeCommunity.id === id) {
         setActiveCommunity((prev) => ({ ...prev, ...community }));
@@ -366,7 +378,6 @@ export default function App() {
 
   const handleDeleteCommunity = async (id: string) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
       // 1. Immediately delete from local storage tombstones
       StorageService.deleteCommunity(id);
       // 2. Immediately update state
@@ -389,7 +400,7 @@ export default function App() {
         }
       }
       // 3. Call backend API to delete from database
-      await ApiService.deleteCommunity(id, adminInfo);
+      await ApiService.deleteCommunity(id);
       showToast('Deleted campus successfully.');
       await syncWithBackend();
     } catch (err: any) {
@@ -399,7 +410,6 @@ export default function App() {
 
   const handleAddLocation = async (communityId: string, name: string, zone: string, description: string, isPopular?: boolean) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
       const newLoc: CampusLocation = {
         id: `loc_${Date.now()}`,
         communityId,
@@ -408,7 +418,7 @@ export default function App() {
         description,
         isPopular: !!isPopular,
       };
-      await ApiService.addLocation(communityId, newLoc, adminInfo);
+      await ApiService.addLocation(communityId, newLoc);
       await syncWithBackend();
       showToast(`Added new spot "${name}"!`);
     } catch (err: any) {
@@ -418,8 +428,7 @@ export default function App() {
 
   const handleUpdateLocation = async (communityId: string, locId: string, updates: Partial<CampusLocation>) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      await ApiService.updateLocation(communityId, locId, updates, adminInfo);
+      await ApiService.updateLocation(communityId, locId, updates);
       await syncWithBackend();
       showToast('Updated spot details.');
     } catch (err: any) {
@@ -437,8 +446,7 @@ export default function App() {
         prev && prev.id === communityId ? { ...prev, locations: (prev.locations || []).filter((l) => l.id !== locId) } : prev
       );
 
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      await ApiService.deleteLocation(communityId, locId, adminInfo);
+      await ApiService.deleteLocation(communityId, locId);
       await syncWithBackend();
       showToast('Deleted spot.');
     } catch (err: any) {
@@ -448,14 +456,15 @@ export default function App() {
 
   const handleChangeUserRole = async (userId: string, newRole: UserRole) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { user: updatedUser, log } = await ApiService.updateUserRole(userId, newRole, adminInfo);
+      const { user: updatedUser, log } = await ApiService.updateUserRole(userId, newRole);
       setAllUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
-      setAuditLogs((prev) => [log, ...prev]);
-      if (currentUser?.id === userId) {
-        setCurrentUser((prev) => prev ? { ...prev, role: newRole } : null);
+      if (log) {
+        setAuditLogs((prev) => [log, ...prev]);
       }
-      showToast(`Updated role for ${updatedUser.name} to ${newRole === 'community_admin' ? 'Campus Admin' : 'Member'}.`);
+      if (currentUser?.id === userId) {
+        setCurrentUser((prev) => (prev ? { ...prev, role: newRole } : null));
+      }
+      showToast(`Updated role for ${updatedUser?.name || 'user'} to ${newRole === 'community_admin' ? 'Campus Admin' : 'Member'}.`);
     } catch (err: any) {
       showToast(`Role change failed: ${err.message}`);
     }
@@ -463,10 +472,11 @@ export default function App() {
 
   const handleDeleteUser = async (userId: string) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { log } = await ApiService.deleteUser(userId, adminInfo);
+      const { log } = await ApiService.deleteUser(userId);
       setAllUsers((prev) => prev.filter((u) => u.id !== userId));
-      setAuditLogs((prev) => [log, ...prev]);
+      if (log) {
+        setAuditLogs((prev) => [log, ...prev]);
+      }
       showToast('Deleted user account.');
     } catch (err: any) {
       showToast(`Delete user failed: ${err.message}`);
@@ -475,11 +485,10 @@ export default function App() {
 
   const handleCreateUser = async (userData: any) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const { user: newUser, log } = await ApiService.createUser(userData, adminInfo);
+      const { user: newUser } = await ApiService.createUser(userData);
       setAllUsers((prev) => [newUser, ...prev]);
-      setAuditLogs((prev) => [log, ...prev]);
       showToast(`Created account for ${newUser.name}!`);
+      await syncWithBackend();
     } catch (err: any) {
       showToast(`Create user failed: ${err.message}`);
     }
@@ -487,8 +496,7 @@ export default function App() {
 
   const handleApproveResetRequest = async (requestId: string) => {
     try {
-      const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      const res = await ApiService.approveResetRequest(requestId, adminInfo);
+      const res = await ApiService.approveResetRequest(requestId);
       showToast(res.message || 'Password reset approved! User can now sign in without password to set new password.');
       await syncWithBackend();
     } catch (err: any) {
@@ -538,8 +546,14 @@ export default function App() {
   const handleFinishMyBreak = async () => {
     if (!myActiveBreak) return;
     try {
-      const res = await ApiService.completeBreak(myActiveBreak.id);
-      setBreakPosts((prev) => prev.map((p) => (p.id === myActiveBreak.id ? res.post : p)));
+      await ApiService.completeBreak(myActiveBreak.id);
+      setBreakPosts((prev) =>
+        prev.map((p) =>
+          p.id === myActiveBreak.id
+            ? { ...p, status: 'completed' as BreakAvailabilityStatus, expiresAt: Date.now() }
+            : p
+        )
+      );
       showToast('Break marked as completed.');
     } catch (err: any) {
       showToast(`Complete failed: ${err.message}`);
@@ -648,6 +662,7 @@ export default function App() {
             />
           ) : (
             <AdminLoginPage
+              communities={communities}
               onLoginSuccess={(admin) => {
                 setCurrentUser(admin);
                 showToast(`Signed in as ${admin.name}`);

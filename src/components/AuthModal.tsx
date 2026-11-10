@@ -105,15 +105,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         employeeId: employeeId.trim().toUpperCase(),
         campusId: selectedCampusId,
         roleTitle: roleTitle.trim() || 'Software Engineer',
-        communityId: selectedCampusId,
         interests: interestsInput.split(',').map((s) => s.trim()).filter(Boolean),
         dietary,
         icebreaker: icebreaker.trim() || 'Ask me about my favorite campus food spots!',
       });
 
-      onRegisterNew(res.user);
-      onSuccess(res.user);
-      onClose();
+      if (res.user) {
+        onRegisterNew(res.user);
+        if (res.user.status === 'approved') {
+          onSuccess(res.user);
+          onClose();
+        } else {
+          setSuccessMessage(
+            res.message ||
+              'Registration submitted! Your profile is pending campus admin approval before you can access live break boards.'
+          );
+        }
+      } else {
+        setSuccessMessage(res.message || 'Registration submitted successfully!');
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Registration failed.');
     } finally {
