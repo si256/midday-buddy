@@ -19,19 +19,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
 
-      - name: TypeScript Typecheck
-        run: npx tsc --noEmit
-
-      - name: ESLint
+      - name: TypeScript Typecheck & Lint
         run: npm run lint
 
       - name: Execute Security & RBAC Test Suite
-        run: npx tsx --test src/utils/*.test.ts
+        run: npm test
 
       - name: Build Applet (Production bundle)
         run: npm run build
