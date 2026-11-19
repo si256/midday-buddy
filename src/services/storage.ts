@@ -1,59 +1,98 @@
-/**
- * Client Storage Cache Service
- * Strictly for caching UI preferences, public campus lists, and client tombstones.
- * Zero authentication or authorization logic. Server is the sole authority.
- */
-
 import { 
   UserProfile, 
   Community, 
   BreakPost, 
+  Conversation, 
+  ChatMessage, 
   AppNotification, 
-  CampusLocation,
-  AuditLog
+  AuditLog, 
+  CampusLocation 
 } from '../types';
-import { INITIAL_COMMUNITIES } from '../data/seedData';
+import { 
+  INITIAL_COMMUNITIES, 
+  INITIAL_USERS, 
+  INITIAL_BREAK_POSTS, 
+  INITIAL_AUDIT_LOGS 
+} from '../data/seedData';
 
 const KEYS = {
-  USERS: 'mdb_users_cache_v3',
-  SESSION_USER: 'mdb_session_user_v3',
-  COMMUNITIES: 'mdb_communities_cache_v3',
-  BREAKS: 'mdb_breaks_cache_v3',
-  NOTIFICATIONS: 'mdb_notifications_cache_v3',
-  DELETED_COMMUNITIES: 'mdb_deleted_community_ids_v1',
-  DELETED_LOCATIONS: 'mdb_deleted_location_ids_v1',
+  USERS: 'mdb_users_v2',
+  SESSION: 'mdb_session_user_id_v2',
+  COMMUNITIES: 'mdb_communities_v2',
+  BREAKS: 'mdb_breaks_v2',
+  CONVERSATIONS: 'mdb_conversations_v2',
+  MESSAGES: 'mdb_messages_v2',
+  NOTIFICATIONS: 'mdb_notifications_v2',
+  AUDIT_LOGS: 'mdb_audit_logs_v2',
 };
 
+// Seed initial notifications for realism
+const INITIAL_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif_welcome',
+    userId: 'usr_dinesh',
+    title: 'Welcome to Siruseri Break Network!',
+    body: 'Your account was verified by Campus Culture Lead Kavitha Sundaram.',
+    type: 'approval',
+    isRead: false,
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+  {
+    id: 'notif_ping',
+    userId: 'usr_dinesh',
+    title: 'Aravind Swaminathan is grabbing chai',
+    body: 'Aravind is free right now at Spine Chai Point (Near Core).',
+    type: 'ping',
+    isRead: false,
+    createdAt: new Date(Date.now() - 600000).toISOString(),
+    referenceId: 'post_1',
+  },
+];
+
+// Helper to safely read from localStorage
 function readStorage<T>(key: string, fallback: T): T {
   try {
-    if (typeof localStorage === 'undefined') return fallback;
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
     return JSON.parse(raw);
   } catch (err) {
+    console.error(`Error reading ${key} from localStorage:`, err);
     return fallback;
   }
 }
 
+// Helper to safely write to localStorage
 function writeStorage<T>(key: string, data: T): void {
   try {
-    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(key, JSON.stringify(data));
   } catch (err) {
-    // ignore
+    console.error(`Error writing ${key} to localStorage:`, err);
   }
 }
 
 export const StorageService = {
-  // --- USERS CACHE ---
+  // --- USERS ---
   getUsers(): UserProfile[] {
-    return readStorage<UserProfile[]>(KEYS.USERS, []);
+    const users = readStorage<UserProfile[]>(KEYS.USERS, []);
+    const adminUser = INITIAL_USERS[0]; // admin@middaybuddy.com
+    const adminIndex = users.findIndex((u) => u.email.toLowerCase() === 'admin@middaybuddy.com');
+
+    if (adminIndex === -1) {
+      const updated = [adminUser, ...users];
+      writeStorage(KEYS.USERS, updated);
+      return updated;
+    } else {
+      // Ensure the master admin always has the correct credentials and role
+      if (users[adminIndex].password !== adminUser.password || users[adminIndex].role !== 'community_admin') {
+        users[adminIndex] = { ...users[adminIndex], ...adminUser };
+        writeStorage(KEYS.USERS, users);
+      }
+      return users;
+    }
   },
 
   saveUsers(users: UserProfile[]): void {
-    // Redact any password fields before caching
-    const safeUsers = users.map(({ password: _, ...rest }) => rest as UserProfile);
-    writeStorage(KEYS.USERS, safeUsers);
+    writeStorage(KEYS.USERS, users);
   },
 
   getUserById(id: string): UserProfile | undefined {
@@ -61,55 +100,62 @@ export const StorageService = {
   },
 
   updateUser(updated: UserProfile): void {
-    const { password: _, ...safe } = updated;
-    const users = this.getUsers().map((u) => (u.id === safe.id ? (safe as UserProfile) : u));
+    const users = this.getUsers().map((u) => (u.id === updated.id ? updated : u));
     this.saveUsers(users);
   },
 
-  // --- SESSION USER CACHE ---
+  // --- SESSIONS ---
   getCurrentSessionUser(): UserProfile | null {
-    return readStorage<UserProfile | null>(KEYS.SESSION_USER, null);
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('mdb_token_v2') : null;
+    if (!token) {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(KEYS.SESSION);
+      return null;
+    }
+    const userId = localStorage.getItem(KEYS.SESSION);
+    if (!userId) {
+      return null;
+    }
+    return this.getUserById(userId) || null;
   },
 
   setCurrentSessionUser(user: UserProfile | null): void {
     if (user) {
-      const { password: _, ...safe } = user;
-      writeStorage(KEYS.SESSION_USER, safe);
+      localStorage.setItem(KEYS.SESSION, user.id);
     } else {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem(KEYS.SESSION_USER);
-      }
+      localStorage.removeItem(KEYS.SESSION);
     }
   },
 
-  // --- TOMBSTONES ---
+  // --- COMMUNITIES ---
   getDeletedCommunityIds(): string[] {
-    return readStorage<string[]>(KEYS.DELETED_COMMUNITIES, []);
+    return readStorage<string[]>('mdb_deleted_community_ids_v1', []);
   },
 
   getDeletedLocationIds(): string[] {
-    return readStorage<string[]>(KEYS.DELETED_LOCATIONS, []);
+    return readStorage<string[]>('mdb_deleted_location_ids_v1', []);
   },
 
   addDeletedLocationId(locId: string): void {
-    const current = new Set(this.getDeletedLocationIds());
-    current.add(locId);
-    writeStorage(KEYS.DELETED_LOCATIONS, Array.from(current));
+    const ids = this.getDeletedLocationIds();
+    if (!ids.includes(locId)) {
+      writeStorage('mdb_deleted_location_ids_v1', [...ids, locId]);
+    }
   },
 
   removeDeletedLocationId(locId: string): void {
-    const current = new Set(this.getDeletedLocationIds());
-    current.delete(locId);
-    writeStorage(KEYS.DELETED_LOCATIONS, Array.from(current));
+    const ids = this.getDeletedLocationIds().filter((id) => id !== locId);
+    writeStorage('mdb_deleted_location_ids_v1', ids);
   },
 
-  // --- COMMUNITIES CACHE ---
   getCommunities(): Community[] {
     const deletedIds = new Set(this.getDeletedCommunityIds());
     const deletedLocIds = new Set(this.getDeletedLocationIds());
     let comms = readStorage<Community[]>(KEYS.COMMUNITIES, []);
+    const isInit = localStorage.getItem('mdb_communities_initialized_v2');
 
-    if (comms.length === 0) {
+    if (!isInit || comms.length === 0) {
+      writeStorage(KEYS.COMMUNITIES, INITIAL_COMMUNITIES);
+      localStorage.setItem('mdb_communities_initialized_v2', 'true');
       comms = INITIAL_COMMUNITIES;
     }
 
@@ -120,11 +166,15 @@ export const StorageService = {
         locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
       }));
 
-    if (active.length === 0 && INITIAL_COMMUNITIES.length > 0) {
+    if (active.length === 0) {
+      // Enterprise safety net: ensure at least one campus is always present to prevent render crashes
       active = [{
         ...INITIAL_COMMUNITIES[0],
         locations: (INITIAL_COMMUNITIES[0].locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
       }];
+      const updatedTombstones = this.getDeletedCommunityIds().filter((id) => id !== INITIAL_COMMUNITIES[0].id);
+      writeStorage('mdb_deleted_community_ids_v1', updatedTombstones);
+      writeStorage(KEYS.COMMUNITIES, active);
     }
     return active;
   },
@@ -158,7 +208,7 @@ export const StorageService = {
       if (c.id === communityId) {
         return {
           ...c,
-          locations: (c.locations || []).map((loc) => (loc.id === locId ? { ...loc, ...updates } : loc)),
+          locations: c.locations.map((loc) => (loc.id === locId ? { ...loc, ...updates } : loc)),
         };
       }
       return c;
@@ -181,8 +231,10 @@ export const StorageService = {
   },
 
   addCommunity(community: Community): void {
+    // If it was previously in deleted tombstone list, remove it
     const deletedIds = this.getDeletedCommunityIds().filter((id) => id !== community.id);
-    writeStorage(KEYS.DELETED_COMMUNITIES, deletedIds);
+    writeStorage('mdb_deleted_community_ids_v1', deletedIds);
+
     const comms = this.getCommunities().filter((c) => c.id !== community.id);
     this.saveCommunities([...comms, community]);
   },
@@ -193,45 +245,102 @@ export const StorageService = {
   },
 
   deleteCommunity(communityId: string): void {
+    // 1. Add to permanent deleted tombstones
     const deletedIds = Array.from(new Set([...this.getDeletedCommunityIds(), communityId]));
-    writeStorage(KEYS.DELETED_COMMUNITIES, deletedIds);
-    const comms = this.getCommunities().filter((c) => c.id !== communityId);
-    this.saveCommunities(comms);
+    writeStorage('mdb_deleted_community_ids_v1', deletedIds);
+
+    // 2. Remove from active communities list
+    const comms = readStorage<Community[]>(KEYS.COMMUNITIES, []).filter((c) => c.id !== communityId);
+    writeStorage(KEYS.COMMUNITIES, comms);
+
+    // 3. Remove associated breaks
+    const breaks = this.getBreaks().filter((b) => b.communityId !== communityId);
+    this.saveBreaks(breaks);
   },
 
-  // --- BREAKS CACHE ---
+  // --- BREAK POSTS ---
   getBreaks(): BreakPost[] {
-    return readStorage<BreakPost[]>(KEYS.BREAKS, []);
+    const breaks = readStorage<BreakPost[]>(KEYS.BREAKS, []);
+    if (breaks.length === 0) {
+      // Map seed breaks with initial durationMinutes
+      const mapped = INITIAL_BREAK_POSTS.map((b) => ({
+        ...b,
+        durationMinutes: b.breakType === 'tea' ? 15 : b.breakType === 'lunch' ? 30 : 20,
+      }));
+      writeStorage(KEYS.BREAKS, mapped);
+      return mapped;
+    }
+    return breaks;
   },
 
   saveBreaks(breaks: BreakPost[]): void {
     writeStorage(KEYS.BREAKS, breaks);
   },
 
-  // --- NOTIFICATIONS CACHE ---
-  getNotifications(userId: string): AppNotification[] {
-    const all = readStorage<AppNotification[]>(KEYS.NOTIFICATIONS, []);
-    return all.filter((n) => n.userId === userId || n.userId === 'all');
+  addBreak(post: BreakPost): void {
+    const current = this.getBreaks();
+    this.saveBreaks([post, ...current]);
   },
 
-  saveNotifications(notifs: AppNotification[]): void {
-    writeStorage(KEYS.NOTIFICATIONS, notifs);
+  // --- CONVERSATIONS & CHAT ---
+  getConversations(): Conversation[] {
+    return readStorage<Conversation[]>(KEYS.CONVERSATIONS, []);
+  },
+
+  saveConversations(convs: Conversation[]): void {
+    writeStorage(KEYS.CONVERSATIONS, convs);
+  },
+
+  getMessages(conversationId: string): ChatMessage[] {
+    const allMessages = readStorage<Record<string, ChatMessage[]>>(KEYS.MESSAGES, {});
+    return allMessages[conversationId] || [];
+  },
+
+  saveMessage(conversationId: string, message: ChatMessage): void {
+    const allMessages = readStorage<Record<string, ChatMessage[]>>(KEYS.MESSAGES, {});
+    const roomMessages = allMessages[conversationId] || [];
+    allMessages[conversationId] = [...roomMessages, message];
+    writeStorage(KEYS.MESSAGES, allMessages);
+
+    // Update conversation lastMessage snippet
+    const convs = this.getConversations().map((c) => {
+      if (c.id === conversationId) {
+        return { ...c, lastMessage: message.text, lastMessageAt: Date.now() };
+      }
+      return c;
+    });
+    this.saveConversations(convs);
+  },
+
+  // --- NOTIFICATIONS ---
+  getNotifications(userId: string): AppNotification[] {
+    const all = readStorage<AppNotification[]>(KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+    return all.filter((n) => n.userId === userId);
+  },
+
+  addNotification(notification: AppNotification): void {
+    const all = readStorage<AppNotification[]>(KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+    writeStorage(KEYS.NOTIFICATIONS, [notification, ...all]);
   },
 
   markNotificationsRead(userId: string): void {
-    const all = readStorage<AppNotification[]>(KEYS.NOTIFICATIONS, []);
-    const updated = all.map((n) =>
-      n.userId === userId || n.userId === 'all' ? { ...n, isRead: true, read: 1 } : n
-    );
+    const all = readStorage<AppNotification[]>(KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+    const updated = all.map((n) => (n.userId === userId ? { ...n, isRead: true } : n));
     writeStorage(KEYS.NOTIFICATIONS, updated);
   },
 
-  // --- AUDIT LOGS CACHE ---
+  // --- AUDIT LOGS ---
   getAuditLogs(): AuditLog[] {
-    return readStorage<AuditLog[]>('mbu_audit_logs', []);
+    const logs = readStorage<AuditLog[]>(KEYS.AUDIT_LOGS, []);
+    if (logs.length === 0) {
+      writeStorage(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+      return INITIAL_AUDIT_LOGS;
+    }
+    return logs;
   },
 
-  saveAuditLogs(logs: AuditLog[]): void {
-    writeStorage('mbu_audit_logs', logs);
+  addAuditLog(log: AuditLog): void {
+    const logs = this.getAuditLogs();
+    writeStorage(KEYS.AUDIT_LOGS, [log, ...logs]);
   },
 };

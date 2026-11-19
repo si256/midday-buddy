@@ -1,21 +1,26 @@
 import type { AppEnv, PagesFunction } from '../env';
-import { getCorsHeaders } from '../auth';
 
-export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+};
+
+export const onRequestOptions: PagesFunction<AppEnv> = async () => {
   return new Response(null, {
     status: 204,
-    headers: getCorsHeaders(context.request),
+    headers: CORS_HEADERS,
   });
 };
 
 export const onRequest: PagesFunction<AppEnv> = async (context) => {
   const { request } = context;
-  const cors = getCorsHeaders(request);
 
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: cors,
+      headers: CORS_HEADERS,
     });
   }
 
@@ -30,7 +35,7 @@ export const onRequest: PagesFunction<AppEnv> = async (context) => {
     }),
     {
       status: 404,
-      headers: cors,
+      headers: CORS_HEADERS,
     }
   );
 };

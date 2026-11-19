@@ -1,11 +1,18 @@
 import type { AppEnv, PagesFunction } from '../env';
 import { ensureD1Schema } from '../db';
-import { requireAuth, getCorsHeaders } from '../auth';
+import { requireAuth } from '../auth';
 
-export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+};
+
+export const onRequestOptions: PagesFunction<AppEnv> = async () => {
   return new Response(null, {
     status: 204,
-    headers: getCorsHeaders(context.request),
+    headers: CORS_HEADERS,
   });
 };
 
@@ -15,12 +22,10 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   const communityId = url.searchParams.get('communityId') || 'comm_siruseri';
   const breakType = url.searchParams.get('breakType');
   const now = Date.now();
-  const cors = getCorsHeaders(request);
 
   if (!env.DB) {
     return new Response(JSON.stringify([]), {
-      status: 200,
-      headers: cors,
+      headers: CORS_HEADERS,
     });
   }
 
@@ -43,44 +48,24 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const formatted = (results || []).map((row: any) => ({
-      id: row.id,
-      userId: row.user_id,
-      userName: row.user_name || 'Campus Colleague',
-      userRole: row.user_role || 'Software Engineer',
-      communityId: row.community_id,
-      breakType: row.break_type,
-      zone: row.zone,
-      locationName: row.location_name,
-      customNote: row.custom_note || '',
-      durationMinutes: row.duration_minutes || 15,
-      expiresAt: row.expires_at,
-      createdAt: row.created_at,
-      avatarSeed: row.avatar_seed,
-      avatarBgColor: row.avatar_bg || 'bg-amber-600',
-    }));
-
-    return new Response(JSON.stringify(formatted), {
-      status: 200,
-      headers: cors,
+    return new Response(JSON.stringify(results || []), {
+      headers: CORS_HEADERS,
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message || 'Failed to fetch active breaks.' }), {
-      status: 500,
-      headers: cors,
+    return new Response(JSON.stringify([]), {
+      headers: CORS_HEADERS,
     });
   }
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
-  const cors = getCorsHeaders(request);
 
   try {
     if (!env.DB) {
       return new Response(JSON.stringify({ error: 'Database service is unavailable.' }), {
         status: 503,
-        headers: cors,
+        headers: CORS_HEADERS,
       });
     }
 
@@ -89,8 +74,8 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     if (user.status !== 'approved') {
       return new Response(
-        JSON.stringify({ error: 'Forbidden: Only verified and approved members can broadcast breaks.' }),
-        { status: 403, headers: cors }
+        JSON.stringify({ error: 'Only verified and approved members can broadcast breaks.' }),
+        { status: 403, headers: CORS_HEADERS }
       );
     }
 
@@ -122,32 +107,41 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
       now
     ).run();
 
-    const createdPost = {
-      id,
-      userId: user.id,
-      userName: user.name,
-      userRole: user.roleTitle,
-      communityId,
-      breakType,
-      zone,
-      locationName,
-      customNote,
-      durationMinutes: duration,
-      expiresAt,
-      createdAt: now,
-      avatarSeed: user.avatarSeed,
-      avatarBgColor: user.avatarBgColor || 'bg-amber-600',
-    };
+    // Broadcast notification in database
+    const notifId = `notif_${Date.now()}`;
+    await env.DB.prepare(`
+      INSERT INTO notifications (id, user_id, title, body, type, is_read, created_at, reference_id)
+      VALUES (?, 'all', ?, ?, 'ping', 0, ?, ?);
+    `).bind(
+      notifId,
+      `${user.name} stepped out for a ${breakType.toUpperCase()} break!`,
+      `Meeting at ${locationName} (${zone}). "${customNote || 'Join me!'}"`,
+      new Date().toISOString(),
+      id
+    ).run().catch(() => {});
 
-    return new Response(JSON.stringify(createdPost), {
-      status: 201,
-      headers: cors,
-    });
+    return new Response(
+      JSON.stringify({
+        id,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.roleTitle,
+        communityId,
+        breakType,
+        zone,
+        locationName,
+        customNote,
+        durationMinutes: duration,
+        createdAt: now,
+        expiresAt,
+      }),
+      { status: 201, headers: CORS_HEADERS }
+    );
   } catch (err: any) {
     if (err instanceof Response) return err;
-    return new Response(JSON.stringify({ error: err.message || 'Failed to create break.' }), {
-      status: 500,
-      headers: cors,
-    });
+    return new Response(
+      JSON.stringify({ error: err.message || 'Failed to create break' }),
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 };

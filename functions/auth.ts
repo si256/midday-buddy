@@ -1,5 +1,5 @@
 import type { D1Database } from './env';
-import { hashToken, generateCsrfToken } from './crypto';
+import { hashToken } from './crypto';
 
 export interface AuthenticatedUser {
   id: string;
@@ -19,49 +19,8 @@ export interface AuthenticatedUser {
   socialBattery?: string;
   registeredAt?: string;
   approvedAt?: string;
-  rawSessionToken?: string;
 }
 
-/**
- * Enterprise Origin Policy: Explicit allowed origins (No wildcard '*' with credentials)
- */
-export function getCorsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get('Origin') || '';
-  const isAllowed =
-    origin.endsWith('.pages.dev') ||
-    origin.endsWith('.run.app') ||
-    origin.includes('localhost:') ||
-    origin.includes('127.0.0.1:');
-
-  const allowedOrigin = isAllowed ? origin : 'https://midday-buddy.pages.dev';
-
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
-    'Content-Type': 'application/json',
-  };
-}
-
-/**
- * Creates HttpOnly, Secure, SameSite session cookie
- */
-export function createSessionCookie(token: string): string {
-  // Max-Age 30 days = 2592000 seconds
-  return `session=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000`;
-}
-
-/**
- * Clears session cookie on logout or session revocation
- */
-export function clearSessionCookie(): string {
-  return `session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
-}
-
-/**
- * Extracts session token from Authorization: Bearer or HttpOnly session cookie
- */
 export function extractToken(request: Request): string | null {
   const authHeader = request.headers.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -70,29 +29,11 @@ export function extractToken(request: Request): string | null {
 
   const cookieHeader = request.headers.get('Cookie');
   if (cookieHeader) {
-    const match = cookieHeader.match(/(?:^|;\s*)session=([^;]+)/);
+    const match = cookieHeader.match(/session=([^;]+)/);
     if (match) return decodeURIComponent(match[1]);
   }
 
   return null;
-}
-
-/**
- * Enforces CSRF Token validation for state-modifying requests (POST, PUT, DELETE)
- */
-export async function validateCsrf(request: Request, sessionToken: string): Promise<boolean> {
-  const method = request.method.toUpperCase();
-  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-    return true;
-  }
-
-  const clientCsrfToken = request.headers.get('X-CSRF-Token');
-  if (!clientCsrfToken) {
-    return false;
-  }
-
-  const expectedCsrfToken = await generateCsrfToken(sessionToken);
-  return clientCsrfToken === expectedCsrfToken;
 }
 
 export async function getSessionUser(request: Request, db?: D1Database): Promise<AuthenticatedUser | null> {
@@ -127,7 +68,6 @@ export async function getSessionUser(request: Request, db?: D1Database): Promise
 
     return {
       ...row,
-      rawSessionToken: token,
       interests: Array.isArray(parsedInterests) ? parsedInterests : [],
     };
   } catch (err) {
@@ -137,27 +77,13 @@ export async function getSessionUser(request: Request, db?: D1Database): Promise
 }
 
 export async function requireAuth(request: Request, db?: D1Database): Promise<AuthenticatedUser> {
-  const cors = getCorsHeaders(request);
   const user = await getSessionUser(request, db);
-
   if (!user) {
     throw new Response(
       JSON.stringify({ error: 'Unauthorized: Authentication required to access this resource.' }),
-      { status: 401, headers: cors }
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
     );
   }
-
-  // Validate CSRF token on state-modifying calls
-  if (user.rawSessionToken) {
-    const isCsrfValid = await validateCsrf(request, user.rawSessionToken);
-    if (!isCsrfValid) {
-      throw new Response(
-        JSON.stringify({ error: 'Forbidden: Invalid or missing CSRF token.' }),
-        { status: 403, headers: cors }
-      );
-    }
-  }
-
   return user;
 }
 
@@ -168,7 +94,7 @@ export function requireRole(
 ): void {
   if (!allowedRoles.includes(user.role)) {
     throw new Response(
-      JSON.stringify({ error: 'Forbidden: Insufficient administrator privileges.' }),
+      JSON.stringify({ error: 'Forbidden: Insufficient privileges for this operation.' }),
       { status: 403, headers: { 'Content-Type': 'application/json' } }
     );
   }

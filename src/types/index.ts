@@ -117,7 +117,6 @@ export interface AppNotification {
   body: string;
   type: 'ping' | 'approval' | 'rejection' | 'chat';
   isRead: boolean;
-  read?: boolean | number;
   createdAt: string;
   referenceId?: string;
 }
@@ -126,24 +125,7 @@ export interface AuditLog {
   id: string;
   adminId: string;
   adminName: string;
-  action:
-    | 'APPROVE_USER'
-    | 'REJECT_USER'
-    | 'SUSPEND_USER'
-    | 'REINSTATE_USER'
-    | 'ADD_LOCATION'
-    | 'UPDATE_LOCATION'
-    | 'DELETE_LOCATION'
-    | 'ADD_COMMUNITY'
-    | 'UPDATE_COMMUNITY'
-    | 'DELETE_COMMUNITY'
-    | 'APPROVE_PASSWORD_RESET'
-    | 'PROVISION_FIRST_ADMIN'
-    | 'PROVISION_USER'
-    | 'CHANGE_ROLE'
-    | 'TOGGLE_STATUS'
-    | 'DELETE_USER'
-    | string;
+  action: 'APPROVE_USER' | 'REJECT_USER' | 'SUSPEND_USER' | 'REINSTATE_USER' | 'ADD_LOCATION' | 'DELETE_LOCATION' | 'APPROVE_PASSWORD_RESET';
   targetUserId?: string;
   targetUserName?: string;
   details: string;
@@ -152,7 +134,6 @@ export interface AuditLog {
 
 export interface AuthResponse {
   token: string;
-  csrfToken?: string;
   user: UserProfile;
   mustChangePassword?: boolean;
   message?: string;
