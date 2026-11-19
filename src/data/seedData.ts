@@ -9,6 +9,8 @@ export const INITIAL_COMMUNITIES: Community[] = [
     description: 'The iconic 70-acre butterfly campus with the 400m Central Spine and vibrant cafeterias.',
     memberCount: 342,
     activeBreaksCount: 14,
+    verifiedDomains: ['tcs.com', 'middaybuddy.com'],
+    hasInviteCode: true,
     locations: [
       {
         id: 'loc_spine_chai_core',
@@ -76,6 +78,7 @@ export const INITIAL_COMMUNITIES: Community[] = [
     description: 'Premier IT landmark on OMR with multi-floor food courts and garden patio.',
     memberCount: 185,
     activeBreaksCount: 6,
+    verifiedDomains: ['middaybuddy.com'],
     locations: [
       {
         id: 'loc_tidel_central_cafe',
@@ -103,6 +106,7 @@ export const INITIAL_COMMUNITIES: Community[] = [
     description: 'Dynamic campus hub in North Bengaluru with rooftop cafes and sports courts.',
     memberCount: 220,
     activeBreaksCount: 9,
+    verifiedDomains: ['middaybuddy.com'],
     locations: [
       {
         id: 'loc_manyata_hub',
@@ -116,30 +120,10 @@ export const INITIAL_COMMUNITIES: Community[] = [
   },
 ];
 
-export const INITIAL_USERS: UserProfile[] = [
-  {
-    id: 'usr_admin',
-    email: 'admin@middaybuddy.com',
-    password: 'Admin@12345',
-    name: 'System Administrator',
-    employeeId: 'ADM-001',
-    roleTitle: 'Platform Administrator',
-    campusId: 'comm_siruseri',
-    avatarSeed: 'Admin',
-    avatarBgColor: 'bg-indigo-600',
-    bio: 'Platform administration and member verification for MidDay Buddy.',
-    icebreaker: 'Welcome to MidDay Buddy backed by CoreReacher Enterprises!',
-    interests: ['Workplace Well-being', 'Technology', 'Community'],
-    dietary: 'Any',
-    socialBattery: 'Balanced Banter',
-    role: 'community_admin',
-    status: 'approved',
-    registeredAt: '2026-11-01T00:00:00Z',
-    approvedAt: '2026-11-01T00:00:00Z',
-  },
-];
+export const INITIAL_USERS: UserProfile[] = [];
 
 export const INITIAL_BREAK_POSTS: BreakPost[] = [];
 
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
+
 

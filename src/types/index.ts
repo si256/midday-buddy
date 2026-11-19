@@ -53,6 +53,11 @@ export interface Community {
   memberCount: number;
   activeBreaksCount: number;
   locations: CampusLocation[];
+  verifiedDomains?: string[];
+  inviteCode?: string;
+  hasInviteCode?: boolean;
+  webhookUrl?: string;
+  hasWebhook?: boolean;
 }
 
 export interface BreakPost {
@@ -97,6 +102,7 @@ export interface ChatMessage {
   senderAvatarBg?: string;
   text: string;
   timestamp: string;
+  createdAt?: number;
   isSystem?: boolean;
 }
 
@@ -125,7 +131,7 @@ export interface AuditLog {
   id: string;
   adminId: string;
   adminName: string;
-  action: 'APPROVE_USER' | 'REJECT_USER' | 'SUSPEND_USER' | 'REINSTATE_USER' | 'ADD_LOCATION' | 'DELETE_LOCATION' | 'APPROVE_PASSWORD_RESET';
+  action: 'APPROVE_USER' | 'AUTO_APPROVE_USER' | 'REJECT_USER' | 'SUSPEND_USER' | 'REINSTATE_USER' | 'ADD_LOCATION' | 'DELETE_LOCATION' | 'APPROVE_PASSWORD_RESET' | 'UPDATE_COMMUNITY' | 'ADD_COMMUNITY' | 'DELETE_COMMUNITY' | 'UPDATE_LOCATION' | 'CHANGE_ROLE' | 'DELETE_USER' | 'CREATE_USER' | 'ADD_MEMBER';
   targetUserId?: string;
   targetUserName?: string;
   details: string;
@@ -150,4 +156,5 @@ export interface PasswordResetRequest {
   approvedAt?: string;
   adminId?: string;
 }
+
 

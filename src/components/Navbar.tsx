@@ -7,11 +7,13 @@ import {
   Moon, 
   ChevronDown, 
   Bell,
+  BellRing,
   Settings,
   LogOut,
   LogIn
 } from 'lucide-react';
 import { Community, UserProfile } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   communities: Community[];
@@ -27,6 +29,8 @@ interface NavbarProps {
   pendingApprovalsCount: number;
   unreadNotificationsCount: number;
   onToggleNotifications: () => void;
+  desktopAlertsEnabled?: boolean;
+  onToggleDesktopAlerts?: () => void;
   darkMode: boolean;
   onToggleDarkMode: () => void;
 }
@@ -44,6 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   pendingApprovalsCount,
   unreadNotificationsCount,
   onToggleNotifications,
+  desktopAlertsEnabled = false,
+  onToggleDesktopAlerts,
   darkMode,
   onToggleDarkMode,
 }) => {
@@ -111,8 +117,28 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </nav>
 
-        {/* Zone 3: Notification Bell, Theme & User Profile (Compact on Mobile) */}
+        {/* Zone 3: PWA Install, Alerts, Theme & User Profile (Compact on Mobile) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <PWAInstallButton />
+
+          {/* Desktop Break Alerts Toggle */}
+          {currentUser && currentUser.status === 'approved' && onToggleDesktopAlerts && (
+            <button
+              type="button"
+              onClick={onToggleDesktopAlerts}
+              title={desktopAlertsEnabled ? 'Desktop break alerts ON (click to disable)' : 'Enable desktop break alerts'}
+              aria-label="Toggle desktop break alerts"
+              className={`hidden sm:flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold transition-colors shrink-0 ${
+                desktopAlertsEnabled
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'border-stone-200 text-slate-600 hover:bg-stone-100 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              <BellRing className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">{desktopAlertsEnabled ? 'Alerts On' : 'Alerts'}</span>
+            </button>
+          )}
+
           {/* Notification Center Trigger */}
           {currentUser && (
             <button

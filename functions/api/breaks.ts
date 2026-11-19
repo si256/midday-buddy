@@ -46,9 +46,30 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
 
     query += ` ORDER BY b.created_at DESC LIMIT 50;`;
 
-    const { results } = await env.DB.prepare(query).bind(...params).all();
+    const { results } = await env.DB.prepare(query).bind(...params).all<any>();
 
-    return new Response(JSON.stringify(results || []), {
+    const mapped = (results || []).map((r: any) => ({
+      id: r.id,
+      userId: r.user_id,
+      userName: r.user_name || 'Colleague',
+      userRole: r.user_role || 'Employee',
+      userAvatarSeed: r.avatar_seed || r.user_name || 'User',
+      userAvatarBg: r.avatar_bg || 'bg-amber-600',
+      communityId: r.community_id,
+      breakType: r.break_type,
+      status: r.expires_at > now ? 'free_now' : 'completed',
+      timeLabel: `Free Right Now (${r.duration_minutes || 15}m)`,
+      durationMinutes: r.duration_minutes || 15,
+      locationName: r.location_name,
+      zone: r.zone,
+      customNote: r.custom_note || '',
+      interests: [],
+      icebreaker: 'Join me for a break!',
+      expiresAt: r.expires_at,
+      createdAt: r.created_at,
+    }));
+
+    return new Response(JSON.stringify(mapped), {
       headers: CORS_HEADERS,
     });
   } catch (error: any) {

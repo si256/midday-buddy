@@ -1,40 +1,45 @@
 import type { AppEnv, PagesFunction } from '../../env';
 import { ensureD1Schema } from '../../db';
-import { getSessionUser } from '../../auth';
+import { requireAuth, getCorsHeaders } from '../../auth';
+import { generateCsrfToken } from '../../crypto';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
+  const cors = getCorsHeaders(request);
 
-  if (env.DB) {
+  try {
+    if (!env.DB) {
+      return new Response(JSON.stringify({ error: 'Database service is currently unavailable.' }), {
+        status: 503,
+        headers: cors,
+      });
+    }
+
     await ensureD1Schema(env.DB);
-  }
+    const user = await requireAuth(request, env.DB);
 
-  const user = await getSessionUser(request, env.DB);
-  if (!user) {
-    return new Response(JSON.stringify({ error: 'Unauthorized: Session is invalid or has expired.' }), {
+    const csrfToken = user.rawSessionToken ? await generateCsrfToken(user.rawSessionToken) : null;
+    const { rawSessionToken: _, ...safeUser } = user;
+
+    return new Response(
+      JSON.stringify({
+        user: safeUser,
+        csrfToken,
+      }),
+      { status: 200, headers: cors }
+    );
+  } catch (err: any) {
+    if (err instanceof Response) return err;
+    return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or expired session.' }), {
       status: 401,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
-
-  return new Response(
-    JSON.stringify({
-      user,
-    }),
-    { status: 200, headers: CORS_HEADERS }
-  );
 };

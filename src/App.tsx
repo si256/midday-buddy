@@ -27,9 +27,7 @@ import {
   PasswordResetRequest,
   UserRole
 } from './types';
-import { StorageService } from './services/storage';
 import { ApiService } from './services/api';
-import { INITIAL_COMMUNITIES } from './data/seedData';
 import { Navbar } from './components/Navbar';
 import { BreakCard } from './components/BreakCard';
 import { InterestModal } from './components/InterestModal';
@@ -44,6 +42,17 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 import { AdminLoginPage } from './components/AdminLoginPage';
 
+const EMPTY_COMMUNITY: Community = {
+  id: '',
+  slug: '',
+  name: 'Loading Campus...',
+  city: '',
+  description: '',
+  memberCount: 0,
+  activeBreaksCount: 0,
+  locations: [],
+};
+
 export default function App() {
   // Theme state
   const [darkMode, setDarkMode] = React.useState(false);
@@ -55,24 +64,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Core Persistent State
-  const [communities, setCommunities] = React.useState<Community[]>(() => {
-    const list = StorageService.getCommunities();
-    return list.length > 0 ? list : INITIAL_COMMUNITIES;
-  });
-  const [activeCommunity, setActiveCommunity] = React.useState<Community>(() => {
-    const comms = StorageService.getCommunities();
-    return comms.length > 0 ? comms[0] : INITIAL_COMMUNITIES[0];
-  });
-  const [allUsers, setAllUsers] = React.useState<UserProfile[]>(() => StorageService.getUsers());
-  const [currentUser, setCurrentUser] = React.useState<UserProfile | null>(() => StorageService.getCurrentSessionUser());
-  const [breakPosts, setBreakPosts] = React.useState<BreakPost[]>(() => StorageService.getBreaks());
-  const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>(() => StorageService.getAuditLogs());
+  // Core Server-Authoritative State (loaded exclusively from persistent database API)
+  const [communities, setCommunities] = React.useState<Community[]>([]);
+  const [activeCommunity, setActiveCommunity] = React.useState<Community>(EMPTY_COMMUNITY);
+  const [allUsers, setAllUsers] = React.useState<UserProfile[]>([]);
+  const [currentUser, setCurrentUser] = React.useState<UserProfile | null>(null);
+  const [breakPosts, setBreakPosts] = React.useState<BreakPost[]>([]);
+  const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([]);
   const [resetRequests, setResetRequests] = React.useState<PasswordResetRequest[]>([]);
-  const [notifications, setNotifications] = React.useState<AppNotification[]>(() => {
-    const user = StorageService.getCurrentSessionUser();
-    return user ? StorageService.getNotifications(user.id) : [];
-  });
+  const [notifications, setNotifications] = React.useState<AppNotification[]>([]);
+  const [syncError, setSyncError] = React.useState<string | null>(null);
 
   // Navigation & View State (with URL routing support for /admin)
   const [activeView, setActiveView] = React.useState<'board' | 'admin' | 'architecture'>(() => {
@@ -146,34 +147,35 @@ export default function App() {
   const syncWithBackend = React.useCallback(async () => {
     try {
       const token = ApiService.getToken();
-      const isAdmin = Boolean(token) && (currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin');
+      const isAdmin =
+        Boolean(token) &&
+        (currentUser?.role === 'community_admin' || currentUser?.role === 'platform_admin');
+
       const [comms, users, breaks, logs, resets] = await Promise.all([
         ApiService.getCommunities(),
-        ApiService.getUsers(),
+        token ? ApiService.getUsers().catch(() => []) : Promise.resolve([]),
         ApiService.getBreaks(),
         isAdmin ? ApiService.getAuditLogs().catch(() => []) : Promise.resolve([]),
         isAdmin ? ApiService.getResetRequests().catch(() => []) : Promise.resolve([]),
       ]);
-      const deletedCommIds = new Set(StorageService.getDeletedCommunityIds());
-      const deletedLocIds = new Set(StorageService.getDeletedLocationIds());
-      let validComms = comms
-        .filter((c) => !deletedCommIds.has(c.id))
-        .map((c) => ({
-          ...c,
-          locations: (c.locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
-        }));
-      if (validComms.length === 0) {
-        validComms = [
-          {
-            ...INITIAL_COMMUNITIES[0],
-            locations: (INITIAL_COMMUNITIES[0].locations || []).filter((loc) => !deletedLocIds.has(loc.id)),
-          },
-        ];
-      }
-      setCommunities(validComms);
+
+      setSyncError(null);
+      setCommunities(comms);
       setActiveCommunity((prev) => {
-        const found = validComms.find((c) => c.id === prev?.id);
-        return found || validComms[0];
+        if (comms.length === 0) {
+          return {
+            id: 'comm_none',
+            name: 'No Campuses Configured',
+            slug: 'none',
+            city: '',
+            description: 'Add a campus in the Admin Portal to get started.',
+            memberCount: 0,
+            activeBreaksCount: 0,
+            locations: [],
+          };
+        }
+        const found = comms.find((c) => c.id === prev?.id);
+        return found || comms[0];
       });
       setAllUsers(users);
       setBreakPosts(breaks);
@@ -182,20 +184,20 @@ export default function App() {
         setResetRequests(resets || []);
       }
 
-      if (currentUser) {
-        const notifs = await ApiService.getNotifications(currentUser.id);
+      if (currentUser && token) {
+        const notifs = await ApiService.getNotifications(currentUser.id).catch(() => []);
         setNotifications(notifs);
         const fresh = users.find((u) => u.id === currentUser.id);
-        if (fresh && fresh.status !== currentUser.status) {
+        if (fresh && (fresh.status !== currentUser.status || fresh.role !== currentUser.role)) {
           setCurrentUser(fresh);
         }
       }
-    } catch (err) {
-      // Backend sync fallback if network blip
+    } catch (err: any) {
+      setSyncError(err?.message || 'Unable to reach backend database server.');
     }
   }, [currentUser]);
 
-  // Verify active session on initial mount
+  // Verify active session on initial mount strictly against persistent sessions table
   React.useEffect(() => {
     const token = ApiService.getToken();
     if (token) {
@@ -203,19 +205,14 @@ export default function App() {
         .then((user) => {
           if (user) {
             setCurrentUser(user);
-            StorageService.setCurrentSessionUser(user);
           }
         })
         .catch(() => {
-          // Token is expired or invalid on server
           ApiService.setToken(null);
           setCurrentUser(null);
-          StorageService.setCurrentSessionUser(null);
         });
     } else {
-      // Clear stale local session state if no server token is present
       setCurrentUser(null);
-      StorageService.setCurrentSessionUser(null);
     }
   }, []);
 
@@ -243,15 +240,13 @@ export default function App() {
     };
   }, [syncWithBackend]);
 
-  // Sync session & notifications when currentUser changes
+  // Sync notifications when currentUser changes
   React.useEffect(() => {
-    if (currentUser) {
-      StorageService.setCurrentSessionUser(currentUser);
+    if (currentUser && ApiService.getToken()) {
       ApiService.getNotifications(currentUser.id)
         .then(setNotifications)
-        .catch(() => setNotifications(StorageService.getNotifications(currentUser.id)));
+        .catch(() => setNotifications([]));
     } else {
-      StorageService.setCurrentSessionUser(null);
       setNotifications([]);
     }
   }, [currentUser]);
@@ -367,9 +362,7 @@ export default function App() {
   const handleDeleteCommunity = async (id: string) => {
     try {
       const adminInfo = { id: currentUser?.id || 'admin', name: currentUser?.name || 'Campus Admin' };
-      // 1. Immediately delete from local storage tombstones
-      StorageService.deleteCommunity(id);
-      // 2. Immediately update state
+      await ApiService.deleteCommunity(id, adminInfo);
       const remaining = communities.filter((c) => c.id !== id);
       setCommunities(remaining);
       if (activeCommunity.id === id) {
@@ -388,8 +381,6 @@ export default function App() {
           });
         }
       }
-      // 3. Call backend API to delete from database
-      await ApiService.deleteCommunity(id, adminInfo);
       showToast('Deleted campus successfully.');
       await syncWithBackend();
     } catch (err: any) {
@@ -605,12 +596,31 @@ export default function App() {
             notifications={notifications}
             isOpen={isNotificationsOpen}
             onClose={() => setIsNotificationsOpen(false)}
-            onMarkAllRead={() => {
-              StorageService.markNotificationsRead(currentUser.id);
-              setNotifications(StorageService.getNotifications(currentUser.id));
-              showToast('All notifications marked as read.');
+            onMarkAllRead={async () => {
+              try {
+                await ApiService.markNotificationsRead(currentUser.id);
+                setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+                showToast('All notifications marked as read.');
+              } catch (err: any) {
+                showToast(`Could not update notifications: ${err.message}`);
+              }
             }}
           />
+        </div>
+      )}
+
+      {/* Backend Connectivity Banner (Only shown on real API failure) */}
+      {syncError && (
+        <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+            <span>{syncError}</span>
+            <button
+              onClick={() => syncWithBackend()}
+              className="rounded-lg bg-rose-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-rose-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 
@@ -641,8 +651,6 @@ export default function App() {
               resetRequests={resetRequests}
               onApproveResetRequest={handleApproveResetRequest}
               onSwitchToApprovedUser={() => {
-                const approvedUser = allUsers.find((u) => u.status === 'approved' && u.role === 'user') || allUsers[0];
-                setCurrentUser(approvedUser);
                 handleViewChange('board');
               }}
             />
@@ -684,9 +692,7 @@ export default function App() {
             user={currentUser}
             community={activeCommunity}
             onSwitchToAdmin={() => {
-              const admin = allUsers.find((u) => u.role === 'community_admin') || allUsers[0];
-              setCurrentUser(admin);
-              setActiveView('admin');
+              handleViewChange('admin');
             }}
           />
         ) : currentUser.status === 'suspended' ? (

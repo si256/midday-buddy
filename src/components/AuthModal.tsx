@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Lock, Mail, User, Shield, AlertCircle, ArrowRight, UserPlus, LogIn, Coffee, Eye, EyeOff, KeyRound, Check, HelpCircle } from 'lucide-react';
 import { Community, DietaryPreference, SocialBattery, UserProfile } from '../types';
 import { ApiService } from '../services/api';
+import { extractEmailDomain } from '../utils/onboarding';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -47,6 +48,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [dietary, setDietary] = React.useState<DietaryPreference>('Pure Veg');
   const [socialBattery, setSocialBattery] = React.useState<SocialBattery>('Balanced Banter');
   const [interestsInput, setInterestsInput] = React.useState('Filter Coffee, Badminton, Tech');
+  const [inviteCode, setInviteCode] = React.useState('');
+
+  const selectedCampus = React.useMemo(
+    () => communities.find((c) => c.id === selectedCampusId) || activeCommunity || communities[0],
+    [communities, selectedCampusId, activeCommunity]
+  );
+
+  const emailDomain = extractEmailDomain(email);
+  const isDomainAutoVerified = Boolean(
+    emailDomain &&
+    selectedCampus?.verifiedDomains?.some((d) => d.toLowerCase() === emailDomain)
+  );
 
   if (!isOpen) return null;
 
@@ -106,6 +119,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         campusId: selectedCampusId,
         roleTitle: roleTitle.trim() || 'Software Engineer',
         communityId: selectedCampusId,
+        inviteCode: inviteCode.trim() || undefined,
         interests: interestsInput.split(',').map((s) => s.trim()).filter(Boolean),
         dietary,
         icebreaker: icebreaker.trim() || 'Ask me about my favorite campus food spots!',
@@ -307,7 +321,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 Register on MidDay Buddy
               </h2>
               <p className="text-xs text-slate-500">
-                New accounts are placed in waiting approval by admin.
+                Use a verified company email or campus invite code for instant access, or submit for admin review.
               </p>
             </div>
 
@@ -402,21 +416,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Select Campus Hub
-              </label>
-              <select
-                value={selectedCampusId}
-                onChange={(e) => setSelectedCampusId(e.target.value)}
-                className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-              >
-                {communities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.city})
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Select Campus Hub
+                </label>
+                <select
+                  value={selectedCampusId}
+                  onChange={(e) => setSelectedCampusId(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 p-2 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                >
+                  {communities.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Campus Invite Code (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Instant approval code"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 p-2 text-xs font-mono uppercase text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -466,10 +495,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </div>
 
-            <div className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 border border-amber-200 dark:border-amber-900 flex items-center gap-2">
-              <Shield className="h-4 w-4 shrink-0 text-amber-600" />
-              <span><strong>Note:</strong> Registration submitted will be <strong>waiting approval by admin</strong> before full access is activated.</span>
-            </div>
+            {isDomainAutoVerified ? (
+              <div className="rounded-xl bg-emerald-50 p-2.5 text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-900 flex items-center gap-2">
+                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span><strong>Instant Verification:</strong> @{emailDomain} is a verified domain for {selectedCampus?.name}. You&apos;ll get immediate access!</span>
+              </div>
+            ) : inviteCode.trim() ? (
+              <div className="rounded-xl bg-indigo-50 p-2.5 text-xs text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-900 flex items-center gap-2">
+                <KeyRound className="h-4 w-4 shrink-0 text-indigo-600" />
+                <span><strong>Invite Code Entered:</strong> Valid campus codes unlock immediate directory access upon registration.</span>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 border border-amber-200 dark:border-amber-900 flex items-center gap-2">
+                <Shield className="h-4 w-4 shrink-0 text-amber-600" />
+                <span><strong>Note:</strong> Unverified email domains are queued for <strong>admin approval</strong> unless a valid campus invite code is provided.</span>
+              </div>
+            )}
 
             <button
               type="submit"

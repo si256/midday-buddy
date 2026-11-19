@@ -29,8 +29,22 @@ interface AdminDashboardProps {
   communities: Community[];
   activeCommunity: Community;
   onSelectCommunity: (community: Community) => void;
-  onCreateCommunity: (data: { name: string; city: string; description?: string }) => Promise<void>;
-  onUpdateCommunity: (id: string, data: { name: string; city: string; description?: string }) => Promise<void>;
+  onCreateCommunity: (data: {
+    name: string;
+    city: string;
+    description?: string;
+    verifiedDomains?: string[];
+    inviteCode?: string;
+    webhookUrl?: string;
+  }) => Promise<void>;
+  onUpdateCommunity: (id: string, data: {
+    name: string;
+    city: string;
+    description?: string;
+    verifiedDomains?: string[];
+    inviteCode?: string;
+    webhookUrl?: string;
+  }) => Promise<void>;
   onDeleteCommunity: (id: string) => Promise<void>;
   allUsers: UserProfile[];
   onApproveUser: (userId: string) => void;
@@ -117,6 +131,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [campusName, setCampusName] = React.useState('');
   const [campusCity, setCampusCity] = React.useState('Chennai');
   const [campusDesc, setCampusDesc] = React.useState('');
+  const [campusVerifiedDomains, setCampusVerifiedDomains] = React.useState('');
+  const [campusInviteCode, setCampusInviteCode] = React.useState('');
+  const [campusWebhookUrl, setCampusWebhookUrl] = React.useState('');
+  const [campusFormError, setCampusFormError] = React.useState<string | null>(null);
 
   // Form inputs for Spot
   const [spotName, setSpotName] = React.useState('');
@@ -149,6 +167,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setCampusName('');
     setCampusCity('Chennai');
     setCampusDesc('');
+    setCampusVerifiedDomains('');
+    setCampusInviteCode('');
+    setCampusWebhookUrl('');
+    setCampusFormError(null);
     setShowAddCampusModal(true);
   };
 
@@ -157,25 +179,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setCampusName(comm.name);
     setCampusCity(comm.city);
     setCampusDesc(comm.description || '');
+    setCampusVerifiedDomains((comm.verifiedDomains || []).join(', '));
+    setCampusInviteCode(comm.inviteCode || '');
+    setCampusWebhookUrl(comm.webhookUrl || '');
+    setCampusFormError(null);
   };
 
   const handleSaveCampus = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCampusFormError(null);
     if (!campusName.trim() || !campusCity.trim()) return;
 
+    const trimmedWebhook = campusWebhookUrl.trim();
+    if (trimmedWebhook && !trimmedWebhook.startsWith('https://')) {
+      setCampusFormError('Webhook URL must begin with https:// (public Slack/MS Teams incoming webhook).');
+      return;
+    }
+
+    const parsedDomains = campusVerifiedDomains
+      .split(',')
+      .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean);
+
+    const payload = {
+      name: campusName.trim(),
+      city: campusCity.trim(),
+      description: campusDesc.trim(),
+      verifiedDomains: parsedDomains,
+      inviteCode: campusInviteCode.trim().toUpperCase(),
+      webhookUrl: trimmedWebhook,
+    };
+
     if (editingCampus) {
-      await onUpdateCommunity(editingCampus.id, {
-        name: campusName.trim(),
-        city: campusCity.trim(),
-        description: campusDesc.trim(),
-      });
+      await onUpdateCommunity(editingCampus.id, payload);
       setEditingCampus(null);
     } else {
-      await onCreateCommunity({
-        name: campusName.trim(),
-        city: campusCity.trim(),
-        description: campusDesc.trim(),
-      });
+      await onCreateCommunity(payload);
       setShowAddCampusModal(false);
     }
   };
@@ -907,7 +946,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* Selected Campus Detail Card & Edit/Delete Controls */}
             <div className="rounded-2xl border border-stone-100 bg-stone-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                     {currentViewingCommunity.name}
                   </h3>
@@ -918,6 +957,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p className="mt-1 text-xs text-slate-500">
                   {currentViewingCommunity.description || 'No campus description added.'}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                  {currentViewingCommunity.verifiedDomains && currentViewingCommunity.verifiedDomains.length > 0 ? (
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                      Auto-Verify Domains: {currentViewingCommunity.verifiedDomains.map((d) => `@${d}`).join(', ')}
+                    </span>
+                  ) : (
+                    <span className="rounded-md bg-amber-100 px-2 py-0.5 font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      Manual Approval Only
+                    </span>
+                  )}
+                  {(currentViewingCommunity.inviteCode || currentViewingCommunity.hasInviteCode) && (
+                    <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-mono font-semibold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                      Invite Code: {currentViewingCommunity.inviteCode || 'Active'}
+                    </span>
+                  )}
+                  {(currentViewingCommunity.webhookUrl || currentViewingCommunity.hasWebhook) && (
+                    <span className="rounded-md bg-purple-100 px-2 py-0.5 font-semibold text-purple-800 dark:bg-purple-950 dark:text-purple-300">
+                      Slack/Teams Webhook Active
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
@@ -1078,7 +1138,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* MODAL: ADD / EDIT CAMPUS */}
       {(showAddCampusModal || editingCampus) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-slate-800">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">
                 {editingCampus ? 'Edit Workplace Campus' : 'Register New Campus'}
@@ -1094,7 +1154,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveCampus} className="mt-4 space-y-4">
+            {campusFormError && (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+                {campusFormError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveCampus} className="mt-4 space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Campus Name *
@@ -1128,12 +1194,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Campus Description
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="e.g. 70-acre technology campus with central food court and outdoor lawns..."
                   value={campusDesc}
                   onChange={(e) => setCampusDesc(e.target.value)}
                   className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Verified Email Domains (Auto-Approve)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. tcs.com, middaybuddy.com"
+                  value={campusVerifiedDomains}
+                  onChange={(e) => setCampusVerifiedDomains(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Comma-separated corporate domains granted instant access on signup.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Campus Invite Code
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. SIRUSERI-2026"
+                    value={campusInviteCode}
+                    onChange={(e) => setCampusInviteCode(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs font-mono uppercase text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Slack / Teams Webhook URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://hooks.slack.com/..."
+                    value={campusWebhookUrl}
+                    onChange={(e) => setCampusWebhookUrl(e.target.value)}
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">

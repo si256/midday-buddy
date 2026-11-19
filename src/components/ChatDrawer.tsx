@@ -19,6 +19,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [inputVal, setInputVal] = React.useState('');
   const [isSending, setIsSending] = React.useState(false);
+  const [sendError, setSendError] = React.useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const conversationId = activePost
@@ -67,7 +68,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         if (isMounted && fresh.length > 0) {
           setMessages(fresh);
         }
-      } catch (err) {
+      } catch {
         // silent fail during poll
       }
     }, 2500);
@@ -88,6 +89,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     const text = (textToSend || inputVal).trim();
     if (!text || !conversationId || isSending) return;
 
+    setSendError(null);
     setIsSending(true);
     try {
       const savedMsg = await ApiService.sendMessage(conversationId, {
@@ -99,7 +101,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       setMessages((prev) => [...prev, savedMsg]);
       if (!textToSend) setInputVal('');
     } catch (err: any) {
-      alert(`Could not deliver message: ${err.message}`);
+      setSendError(err?.message || 'Could not deliver message. Please retry.');
     } finally {
       setIsSending(false);
     }
@@ -220,7 +222,15 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </div>
 
         {/* Input Bar */}
-        <div className="border-t border-stone-200 p-3.5 dark:border-slate-800">
+        <div className="border-t border-stone-200 p-3.5 dark:border-slate-800 space-y-2">
+          {sendError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
+            >
+              {sendError}
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();

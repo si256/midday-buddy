@@ -33,10 +33,11 @@ test('verifyPassword handles null, empty, and undefined gracefully without throw
   assert.equal(await verifyPassword('something', ''), false);
 });
 
-test('verifyPassword supports legacy plain-text during database transition', async () => {
+test('verifyPassword strictly rejects plain-text passwords without valid PBKDF2 hash format', async () => {
   const plain = 'LegacyPassword123';
-  assert.equal(await verifyPassword(plain, plain), true);
+  assert.equal(await verifyPassword(plain, plain), false);
   assert.equal(await verifyPassword('DifferentPassword', plain), false);
+  assert.equal(await verifyPassword('Admin@12345', 'Admin@12345'), false);
 });
 
 test('hashToken produces deterministic SHA-256 hex digest', async () => {

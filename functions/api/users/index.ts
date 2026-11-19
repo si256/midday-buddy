@@ -1,229 +1,212 @@
 import type { AppEnv, PagesFunction } from '../../env';
 import { ensureD1Schema } from '../../db';
+import { requireAuth, requireRole, getCorsHeaders } from '../../auth';
+import { hashPassword } from '../../crypto';
 
-const DEFAULT_USERS = [
-  {
-    id: 'usr_admin',
-    email: 'admin@middaybuddy.com',
-    name: 'System Administrator',
-    employeeId: 'ADM-001',
-    roleTitle: 'Platform Administrator',
-    campusId: 'comm_siruseri',
-    avatarBgColor: 'bg-indigo-600',
-    bio: 'Platform administration and member verification for MidDay Buddy.',
-    icebreaker: 'Welcome to MidDay Buddy backed by CoreReacher Enterprises!',
-    interests: ['Workplace Well-being', 'Technology', 'Community'],
-    dietary: 'Any',
-    socialBattery: 'Balanced Banter',
-    role: 'community_admin',
-    status: 'approved',
-    registeredAt: '2026-11-01T00:00:00Z',
-    approvedAt: '2026-11-01T00:00:00Z',
-  },
-];
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
-
-  if (!env.DB) {
-    return new Response(JSON.stringify(DEFAULT_USERS), {
-      headers: CORS_HEADERS,
-    });
-  }
+  const cors = getCorsHeaders(request);
 
   try {
+    if (!env.DB) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: cors,
+      });
+    }
+
     await ensureD1Schema(env.DB);
-    const url = new URL(request.url);
-    const statusParam = url.searchParams.get('status');
+    const currentUser = await requireAuth(request, env.DB);
 
-    let query = `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users`;
-    const params: string[] = [];
+    const isAdmin = currentUser.role === 'community_admin' || currentUser.role === 'platform_admin';
 
-    if (statusParam) {
-      query += ` WHERE status = ?`;
-      params.push(statusParam);
+    let query = `
+      SELECT 
+        id, email, name, employee_id as employeeId, campus_id as campusId,
+        role_title as roleTitle, status, role, bio, icebreaker, interests,
+        dietary, social_battery as socialBattery, avatar_seed as avatarSeed,
+        avatar_bg as avatarBgColor, registered_at as registeredAt, approved_at as approvedAt
+      FROM users
+    `;
+    const params: any[] = [];
+
+    if (!isAdmin) {
+      // Standard users only see approved members from their own campus
+      query += ` WHERE status = 'approved' AND campus_id = ?`;
+      params.push(currentUser.campusId);
+    } else if (currentUser.role === 'community_admin') {
+      // Campus admin sees all members and applicants within their own campus
+      query += ` WHERE campus_id = ?`;
+      params.push(currentUser.campusId);
     }
 
     query += ` ORDER BY created_at DESC;`;
 
-    let results: any[] = [];
-    try {
-      const stmt = env.DB.prepare(query);
-      const res = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
-      results = res.results || [];
-    } catch {
-      // Fallback if created_at column is missing
-      const fallbackQuery = statusParam 
-        ? `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users WHERE status = ?;`
-        : `SELECT id, name, email, campus_id as campusId, role_title as roleTitle, status, role, employee_id as employeeId, registered_at as registeredAt, approved_at as approvedAt FROM users;`;
-      const fallbackStmt = env.DB.prepare(fallbackQuery);
-      const res = statusParam ? await fallbackStmt.bind(statusParam).all() : await fallbackStmt.all();
-      results = res.results || [];
-    }
+    const stmt = params.length > 0 ? env.DB.prepare(query).bind(...params) : env.DB.prepare(query);
+    const { results } = await stmt.all<any>();
 
-    // Always ensure Master Admin is included if the database returned 0 users
-    if (results.length === 0) {
-      results = DEFAULT_USERS;
-    }
+    const users = (results || []).map((u: any) => {
+      let parsedInterests: string[] = [];
+      if (u.interests) {
+        try {
+          parsedInterests = typeof u.interests === 'string' ? JSON.parse(u.interests) : u.interests;
+        } catch {
+          parsedInterests = u.interests.split(',').map((s: string) => s.trim());
+        }
+      }
 
-    return new Response(JSON.stringify(results), {
-      headers: CORS_HEADERS,
+      if (!isAdmin) {
+        // Redact email and employeeId for non-admin viewers
+        return {
+          id: u.id,
+          name: u.name,
+          roleTitle: u.roleTitle,
+          campusId: u.campusId,
+          bio: u.bio,
+          icebreaker: u.icebreaker,
+          interests: Array.isArray(parsedInterests) ? parsedInterests : [],
+          dietary: u.dietary,
+          socialBattery: u.socialBattery,
+          avatarSeed: u.avatarSeed,
+          avatarBgColor: u.avatarBgColor,
+          status: 'approved',
+          role: u.role,
+        };
+      }
+
+      return {
+        ...u,
+        interests: Array.isArray(parsedInterests) ? parsedInterests : [],
+      };
     });
-  } catch {
-    return new Response(JSON.stringify(DEFAULT_USERS), {
-      headers: CORS_HEADERS,
+
+    return new Response(JSON.stringify(users), {
+      status: 200,
+      headers: cors,
+    });
+  } catch (err: any) {
+    if (err instanceof Response) return err;
+    return new Response(JSON.stringify({ error: err.message || 'Failed to fetch users.' }), {
+      status: 500,
+      headers: cors,
     });
   }
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
+  const cors = getCorsHeaders(request);
 
   try {
-    const body: any = await request.json().catch(() => ({}));
-    const id = body.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const nowISO = new Date().toISOString();
-    const email = (body.email || '').trim().toLowerCase();
-    const employeeId = (body.employeeId || body.employee_id || '').trim().toUpperCase();
-    const name = (body.name || '').trim();
-    const role = body.role || 'user';
-    const roleTitle = body.roleTitle?.trim() || (role === 'community_admin' ? 'Campus Administrator' : 'Software Engineer');
-    const campusId = body.campusId || 'comm_siruseri';
-    const status = body.status || 'approved';
-    const password = body.password || 'Buddy@12345';
-    const adminId = body.adminId || 'admin';
-    const adminName = body.adminName || 'Campus Admin';
-
-    if (!email || !name) {
-      return new Response(JSON.stringify({ error: 'Name and Email ID are required.' }), {
-        status: 400,
-        headers: CORS_HEADERS,
+    if (!env.DB) {
+      return new Response(JSON.stringify({ error: 'Database service is currently unavailable.' }), {
+        status: 503,
+        headers: cors,
       });
     }
 
-    if (env.DB) {
-      await ensureD1Schema(env.DB);
+    await ensureD1Schema(env.DB);
+    // Strict authentication and campus authority check
+    const adminUser = await requireAuth(request, env.DB);
+    const body: any = await request.json().catch(() => ({}));
+    const campusId = body.campusId || adminUser.campusId || 'comm_siruseri';
+    requireRole(adminUser, ['platform_admin', 'community_admin'], campusId);
 
-      // Check if user with this email or employee ID already exists
-      let existingUser: any = null;
-      if (employeeId) {
-        existingUser = await env.DB.prepare(
-          `SELECT id, email, employee_id, status FROM users WHERE LOWER(email) = ? OR UPPER(employee_id) = ?;`
-        ).bind(email, employeeId).first().catch(() => null);
-      } else {
-        existingUser = await env.DB.prepare(
-          `SELECT id, email, employee_id, status FROM users WHERE LOWER(email) = ?;`
-        ).bind(email).first().catch(() => null);
-      }
+    const { name, email, employeeId, role, roleTitle, password } = body;
 
-      if (existingUser) {
-        // Safe update: Admin provisioning updates the existing record and sets status to approved
-        await env.DB.prepare(`
-          UPDATE users 
-          SET name = ?, email = ?, employee_id = ?, role = ?, role_title = ?, campus_id = ?, status = 'approved', password = ?, password_hash = ?, approved_at = ?
-          WHERE id = ?;
-        `).bind(name, email, employeeId || null, role, roleTitle, campusId, password, password, nowISO, existingUser.id).run();
-
-        const logId = `log_${Date.now()}`;
-        await env.DB.prepare(`
-          INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
-          VALUES (?, ?, ?, 'ADD_MEMBER', ?, ?, ?, ?);
-        `).bind(logId, adminId, adminName, existingUser.id, name, `Admin updated and verified member account for ${name} (Emp ID: ${employeeId})`, nowISO).run().catch(() => {});
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            user: {
-              id: existingUser.id,
-              name,
-              email,
-              employeeId,
-              role,
-              roleTitle,
-              campusId,
-              status: 'approved',
-              registeredAt: nowISO,
-              approvedAt: nowISO,
-            },
-            log: {
-              id: logId,
-              adminId,
-              adminName,
-              action: 'ADD_MEMBER',
-              targetUserId: existingUser.id,
-              targetUserName: name,
-              details: `Admin verified and configured member account for ${name}`,
-              timestamp: nowISO,
-            },
-          }),
-          { status: 200, headers: CORS_HEADERS }
-        );
-      }
-
-      // If does not exist, insert cleanly
-      await env.DB.prepare(`
-        INSERT INTO users (
-          id, email, password, password_hash, name, employee_id, campus_id, role_title,
-          status, role, password_reset_approved, must_change_password, registered_at, approved_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, 0, 0, ?, ?, ?);
-      `).bind(
-        id, email, password, password, name, employeeId || null, campusId, roleTitle,
-        role, nowISO, nowISO, Date.now()
-      ).run();
-
-      const logId = `log_${Date.now()}`;
-      await env.DB.prepare(`
-        INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
-        VALUES (?, ?, ?, 'ADD_MEMBER', ?, ?, ?, ?);
-      `).bind(logId, adminId, adminName, id, name, `Admin created verified member account for ${name} (Emp ID: ${employeeId})`, nowISO).run().catch(() => {});
+    if (!name || !email || !employeeId || !password) {
+      return new Response(
+        JSON.stringify({ error: 'Name, email, employee ID, and password are required.' }),
+        { status: 400, headers: cors }
+      );
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        user: {
-          id,
-          name,
-          email,
-          employeeId,
-          role,
-          roleTitle,
-          campusId,
-          status: 'approved',
-          registeredAt: nowISO,
-          approvedAt: nowISO,
-        },
-        log: {
-          id: `log_${Date.now()}`,
-          adminId,
-          adminName,
-          action: 'ADD_MEMBER',
-          targetUserId: id,
-          targetUserName: name,
-          details: `Admin created verified member account for ${name}`,
-          timestamp: nowISO,
-        },
-      }),
-      { status: 201, headers: CORS_HEADERS }
-    );
+    if (password.length < 8) {
+      return new Response(
+        JSON.stringify({ error: 'Password must be at least 8 characters long.' }),
+        { status: 400, headers: cors }
+      );
+    }
+
+    // Only platform_admin can provision administrators
+    const assignedRole = (role === 'community_admin' && adminUser.role === 'platform_admin') ? 'community_admin' : 'user';
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmpId = employeeId.trim().toUpperCase();
+    const id = body.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const nowISO = new Date().toISOString();
+    const now = Date.now();
+
+    const hashedPassword = await hashPassword(password);
+
+    await env.DB.prepare(`
+      INSERT INTO users (
+        id, email, password_hash, name, employee_id, campus_id, role_title,
+        status, role, password_reset_approved, must_change_password,
+        registered_at, approved_at, created_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        'approved', ?, 0, 0,
+        ?, ?, ?
+      );
+    `).bind(
+      id,
+      trimmedEmail,
+      hashedPassword,
+      name.trim(),
+      trimmedEmpId,
+      campusId,
+      roleTitle?.trim() || (assignedRole === 'community_admin' ? 'Campus Administrator' : 'Software Engineer'),
+      assignedRole,
+      nowISO,
+      nowISO,
+      now
+    ).run();
+
+    // Audit log with session-derived admin identity
+    const logId = `log_${Date.now()}`;
+    await env.DB.prepare(`
+      INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
+      VALUES (?, ?, ?, 'PROVISION_USER', ?, ?, ?, ?);
+    `).bind(
+      logId,
+      adminUser.id,
+      adminUser.name,
+      id,
+      name.trim(),
+      `Directly provisioned verified member ${name.trim()} (${trimmedEmpId}) in campus ${campusId}`,
+      nowISO
+    ).run().catch(() => {});
+
+    const newUser = {
+      id,
+      email: trimmedEmail,
+      name: name.trim(),
+      employeeId: trimmedEmpId,
+      campusId,
+      roleTitle: roleTitle?.trim() || (assignedRole === 'community_admin' ? 'Campus Administrator' : 'Software Engineer'),
+      status: 'approved',
+      role: assignedRole,
+      registeredAt: nowISO,
+      approvedAt: nowISO,
+    };
+
+    return new Response(JSON.stringify({ success: true, user: newUser }), {
+      status: 201,
+      headers: cors,
+    });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    if (err instanceof Response) return err;
+    return new Response(JSON.stringify({ error: err.message || 'Failed to create user.' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };

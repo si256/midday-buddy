@@ -1,38 +1,32 @@
 import type { AppEnv, PagesFunction } from '../env';
 import { ensureD1Schema } from '../db';
-import { requireAuth, requireRole } from '../auth';
+import { requireAuth, requireRole, getCorsHeaders } from '../auth';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
-  const { request, env } = context;
-
-  if (!env.DB) {
-    return new Response(JSON.stringify([]), {
-      status: 200,
-      headers: CORS_HEADERS,
-    });
-  }
-
-  await ensureD1Schema(env.DB);
+  const { env, request } = context;
+  const cors = getCorsHeaders(request);
 
   try {
+    if (!env.DB) {
+      return new Response(JSON.stringify({ error: 'Database service is unavailable.' }), {
+        status: 503,
+        headers: cors,
+      });
+    }
+
+    await ensureD1Schema(env.DB);
+    // Strict authentication: Only administrators can view security audit logs
     const user = await requireAuth(request, env.DB);
     requireRole(user, ['community_admin', 'platform_admin']);
 
-    const query = await env.DB.prepare(`
+    let query = `
       SELECT 
         id, 
         admin_id as adminId, 
@@ -41,28 +35,31 @@ export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
         target_user_id as targetUserId, 
         target_user_name as targetUserName, 
         details, 
-        timestamp
+        timestamp 
       FROM audit_logs
-      ORDER BY timestamp DESC
-      LIMIT 200
-    `).all();
+    `;
+    const params: any[] = [];
 
-    const logs = query.results || [];
-    return new Response(JSON.stringify(logs), {
-      status: 200,
-      headers: CORS_HEADERS,
-    });
-  } catch (err) {
-    if (err instanceof Response) {
-      return new Response(err.body, {
-        status: err.status,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+    if (user.role === 'community_admin') {
+      // Scoped audit trail for campus admin
+      query += ` WHERE details LIKE ? OR admin_id = ?`;
+      params.push(`%${user.campusId}%`, user.id);
     }
-    console.error('Failed to fetch audit logs:', err);
-    return new Response(JSON.stringify({ error: 'Failed to retrieve audit logs' }), {
+
+    query += ` ORDER BY timestamp DESC LIMIT 200;`;
+
+    const stmt = params.length > 0 ? env.DB.prepare(query).bind(...params) : env.DB.prepare(query);
+    const { results } = await stmt.all<any>();
+
+    return new Response(JSON.stringify(results || []), {
+      status: 200,
+      headers: cors,
+    });
+  } catch (err: any) {
+    if (err instanceof Response) return err;
+    return new Response(JSON.stringify({ error: err.message || 'Failed to fetch audit logs.' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };

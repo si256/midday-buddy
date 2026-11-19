@@ -55,10 +55,8 @@ export function canAccessAdminPortal(user: { role: UserRole; status: UserApprova
   return (user.role === 'community_admin' || user.role === 'platform_admin') && user.status === 'approved';
 }
 
-export function verifyPassword(actualPassword?: string, attemptedPassword?: string): boolean {
-  if (!actualPassword || !attemptedPassword) return false;
-  return actualPassword === attemptedPassword;
-}
+import { hashPassword, verifyPassword as verifyPbkdf2Password } from './crypto.ts';
+
 
 export function canLoginWithoutPassword(user: { passwordResetApproved?: boolean }): boolean {
   return Boolean(user.passwordResetApproved);
@@ -159,12 +157,14 @@ test('checkUniqueEmployeeId ignores rejected users allowing re-registration', ()
   assert.equal(checkUniqueEmployeeId(activeOnly, 'EMP-1001'), false);
 });
 
-test('verifyPassword validates matching credentials and rejects incorrect ones', () => {
-  const userPass = 'Admin@12345';
-  assert.equal(verifyPassword(userPass, 'Admin@12345'), true);
-  assert.equal(verifyPassword(userPass, 'WrongPassword'), false);
-  assert.equal(verifyPassword(userPass, ''), false);
-  assert.equal(verifyPassword(undefined, 'Admin@12345'), false);
+test('verifyPassword validates matching PBKDF2 hash credentials and rejects incorrect ones or plaintext', async () => {
+  const plainPassword = 'CorrectSecurePassword!987';
+  const hashed = await hashPassword(plainPassword);
+  assert.equal(await verifyPbkdf2Password(plainPassword, hashed), true);
+  assert.equal(await verifyPbkdf2Password('WrongPassword', hashed), false);
+  assert.equal(await verifyPbkdf2Password('', hashed), false);
+  assert.equal(await verifyPbkdf2Password(plainPassword, 'plaintext_password_not_hash'), false);
+  assert.equal(await verifyPbkdf2Password(plainPassword, ''), false);
 });
 
 test('canBroadcastBreak strictly gates unapproved and suspended members', () => {
@@ -187,10 +187,10 @@ test('canAccessAdminPortal permits verified admins and blocks standard users', (
   assert.equal(canAccessAdminPortal(suspendedAdmin), false);
 });
 
-test('Forgot password lifecycle: admin approval enables passwordless login, forces password change, and invalidates temporary state', () => {
+test('Forgot password lifecycle: admin approval enables passwordless login, forces password change, and invalidates temporary state', async () => {
   const user = {
     email: 'karthik@example.com',
-    password: 'OldPassword@123',
+    password: await hashPassword('OldPassword@123'),
     passwordResetRequested: true,
     passwordResetApproved: false,
     mustChangePassword: false,
@@ -209,14 +209,16 @@ test('Forgot password lifecycle: admin approval enables passwordless login, forc
   const failResult = processPasswordChange(user, '123'); // Too short
   assert.equal(failResult.success, false);
 
-  const successResult = processPasswordChange(user, 'NewStrongPassword@2026');
+  const newHash = await hashPassword('NewStrongPassword@2026');
+  const successResult = processPasswordChange(user, newHash);
   assert.equal(successResult.success, true);
-  assert.equal(user.password, 'NewStrongPassword@2026');
+  assert.equal(user.password, newHash);
   assert.equal(user.passwordResetApproved, false);
   assert.equal(user.mustChangePassword, false);
 
   // 4. User cannot do passwordless login anymore
   assert.equal(canLoginWithoutPassword(user), false);
   // 5. Must authenticate with new password
-  assert.equal(verifyPassword(user.password, 'NewStrongPassword@2026'), true);
+  assert.equal(await verifyPbkdf2Password('NewStrongPassword@2026', user.password), true);
+  assert.equal(await verifyPbkdf2Password('OldPassword@123', user.password), false);
 });

@@ -40,9 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   handleResetAndReload = (): void => {
     try {
-      localStorage.removeItem('mdb_deleted_community_ids_v1');
-      localStorage.removeItem('mdb_communities_initialized_v2');
-      localStorage.removeItem('mdb_communities_v1');
+      localStorage.removeItem('mdb_auth_token_v1');
     } catch {
       // ignore
     }

@@ -1,174 +1,119 @@
 import type { AppEnv, PagesFunction } from '../../env';
 import { ensureD1Schema } from '../../db';
+import { requireAuth, requireRole, getCorsHeaders } from '../../auth';
 
-const DEFAULT_COMMUNITIES = [
-  {
-    id: 'comm_siruseri',
-    slug: 'siruseri-campus',
-    name: 'TCS Siruseri Campus',
-    city: 'Chennai',
-    description: 'The iconic 70-acre butterfly campus with the 400m Central Spine and vibrant cafeterias.',
-    memberCount: 342,
-    activeBreaksCount: 14,
-    locations: [
-      {
-        id: 'loc_spine_chai_core',
-        communityId: 'comm_siruseri',
-        name: 'Spine Chai Point (Near Core)',
-        zone: 'Central Spine',
-        description: 'The most popular ginger chai and filter coffee kiosk by the central tower.',
-        isPopular: true,
-      },
-      {
-        id: 'loc_spine_ccd',
-        communityId: 'comm_siruseri',
-        name: 'Café Coffee Day (Spine East)',
-        zone: 'Central Spine',
-        description: 'Quiet coffee seating with air conditioning and espresso.',
-        isPopular: false,
-      },
-      {
-        id: 'loc_fc1',
-        communityId: 'comm_siruseri',
-        name: 'Food Court 1 (South Indian & Thalis)',
-        zone: 'Food Court 1',
-        description: 'Ground floor main cafeteria featuring hot dosas, Kerala meals, and thalis.',
-        isPopular: true,
-      },
-    ],
-  },
-  {
-    id: 'comm_tidel',
-    slug: 'tidel-park',
-    name: 'Tidel Park Campus',
-    city: 'Chennai',
-    description: 'Premier IT landmark on OMR with multi-floor food courts and garden patio.',
-    memberCount: 185,
-    activeBreaksCount: 6,
-    locations: [],
-  },
-  {
-    id: 'comm_manyata',
-    slug: 'manyata-tech-park',
-    name: 'Manyata Tech Park',
-    city: 'Bengaluru',
-    description: 'Dynamic campus hub in North Bengaluru with rooftop cafes and sports courts.',
-    memberCount: 220,
-    activeBreaksCount: 9,
-    locations: [],
-  },
-];
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestGet: PagesFunction<AppEnv> = async (context) => {
-  const { env } = context;
-
-  const inMemoryDeletedLocs: Set<string> = (typeof globalThis !== 'undefined' && (globalThis as any).__DELETED_LOCATIONS__) || new Set();
-
-  if (!env.DB) {
-    const sanitizedDefaults = DEFAULT_COMMUNITIES.map((c) => ({
-      ...c,
-      locations: (c.locations || []).filter((l) => !inMemoryDeletedLocs.has(l.id)),
-    }));
-    return new Response(JSON.stringify(sanitizedDefaults), {
-      headers: CORS_HEADERS,
-    });
-  }
+  const { env, request } = context;
+  const cors = getCorsHeaders(request);
 
   try {
-    await ensureD1Schema(env.DB);
-    const commsResult = await env.DB.prepare(`SELECT * FROM communities ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
-    const locsResult = await env.DB.prepare(`SELECT * FROM locations ORDER BY name ASC;`).all<any>().catch(() => ({ results: [] }));
-    const deletedResult = await env.DB.prepare(`SELECT id FROM deleted_communities;`).all<{ id: string }>().catch(() => ({ results: [] }));
-    const deletedLocsResult = await env.DB.prepare(`SELECT id FROM deleted_locations;`).all<{ id: string }>().catch(() => ({ results: [] }));
+    if (!env.DB) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: cors,
+      });
+    }
 
-    const deletedIds = new Set((deletedResult.results || []).map((r) => r.id));
-    const deletedLocIds = new Set([
-      ...(deletedLocsResult.results || []).map((r) => r.id),
-      ...Array.from(inMemoryDeletedLocs),
+    await ensureD1Schema(env.DB);
+
+    const [commsResult, locsResult, delComms, delLocs] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM communities ORDER BY name ASC;`).all<any>(),
+      env.DB.prepare(`SELECT * FROM locations ORDER BY name ASC;`).all<any>(),
+      env.DB.prepare(`SELECT id FROM deleted_communities;`).all<{ id: string }>().catch(() => ({ results: [] })),
+      env.DB.prepare(`SELECT id FROM deleted_locations;`).all<{ id: string }>().catch(() => ({ results: [] })),
     ]);
 
-    let comms = (commsResult.results || []).filter((c) => !deletedIds.has(c.id));
-    const locs = (locsResult.results || []).filter((l) => !deletedLocIds.has(l.id));
+    const deletedCommIds = new Set((delComms?.results || []).map((r) => r.id));
+    const deletedLocIds = new Set((delLocs?.results || []).map((r) => r.id));
 
-    // Attach mapped locations to each community
-    const enriched = comms.map((c) => ({
-      id: c.id,
-      slug: c.slug || c.id,
-      name: c.name,
-      city: c.city || 'Chennai',
-      description: c.description || '',
-      memberCount: c.member_count || 0,
-      activeBreaksCount: c.active_breaks_count || 0,
-      locations: locs
-        .filter((l) => l.community_id === c.id)
-        .map((l) => ({
-          id: l.id,
-          communityId: l.community_id,
-          name: l.name,
-          zone: l.zone,
-          description: l.description || '',
-          isPopular: Boolean(l.is_popular),
-        })),
-    }));
+    const communities = (commsResult?.results || [])
+      .filter((c: any) => !deletedCommIds.has(c.id))
+      .map((c: any) => {
+        const locations = (locsResult?.results || [])
+          .filter((loc: any) => loc.community_id === c.id && !deletedLocIds.has(loc.id))
+          .map((loc: any) => ({
+            id: loc.id,
+            communityId: loc.community_id,
+            name: loc.name,
+            zone: loc.zone,
+            description: loc.description,
+            isPopular: Boolean(loc.is_popular),
+          }));
 
-    return new Response(JSON.stringify(enriched), {
-      headers: CORS_HEADERS,
+        return {
+          id: c.id,
+          slug: c.slug,
+          name: c.name,
+          city: c.city,
+          description: c.description || '',
+          memberCount: c.member_count || 0,
+          activeBreaksCount: c.active_breaks_count || 0,
+          locations,
+        };
+      });
+
+    return new Response(JSON.stringify(communities), {
+      status: 200,
+      headers: cors,
     });
-  } catch {
-    return new Response(JSON.stringify([]), {
-      headers: CORS_HEADERS,
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || 'Failed to fetch communities.' }), {
+      status: 500,
+      headers: cors,
     });
   }
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, request } = context;
+  const cors = getCorsHeaders(request);
 
   try {
+    if (!env.DB) {
+      return new Response(JSON.stringify({ error: 'Database service is currently unavailable.' }), {
+        status: 503,
+        headers: cors,
+      });
+    }
+
+    await ensureD1Schema(env.DB);
+    // Strict authentication & authorization: Only platform_admin can create new campuses
+    const adminUser = await requireAuth(request, env.DB);
+    requireRole(adminUser, ['platform_admin']);
+
     const body: any = await request.json().catch(() => ({}));
     if (!body.name || !body.city) {
       return new Response(JSON.stringify({ error: 'Name and city are required' }), {
         status: 400,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
     const id = body.id || `comm_${Date.now()}`;
     const slug = body.slug || body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const nowISO = new Date().toISOString();
-    const adminId = body.adminId || 'admin';
-    const adminName = body.adminName || 'Campus Admin';
 
-    if (env.DB) {
-      await ensureD1Schema(env.DB);
-      // Remove from deleted_communities if re-creating
-      await env.DB.prepare(`DELETE FROM deleted_communities WHERE id = ?;`).bind(id).run().catch(() => {});
+    // Remove from deleted_communities if re-creating
+    await env.DB.prepare(`DELETE FROM deleted_communities WHERE id = ?;`).bind(id).run().catch(() => {});
 
-      await env.DB.prepare(`
-        INSERT INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, 0, ?);
-      `).bind(id, slug, body.name.trim(), body.city.trim(), body.description?.trim() || '', Date.now()).run();
+    await env.DB.prepare(`
+      INSERT INTO communities (id, slug, name, city, description, member_count, active_breaks_count, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 0, ?);
+    `).bind(id, slug, body.name.trim(), body.city.trim(), body.description?.trim() || '', Date.now()).run();
 
-      const logId = `log_${Date.now()}`;
-      await env.DB.prepare(`
-        INSERT INTO audit_logs (id, admin_id, admin_name, action, details, timestamp)
-        VALUES (?, ?, ?, 'ADD_COMMUNITY', ?, ?);
-      `).bind(logId, adminId, adminName, `Created new campus: ${body.name} (${body.city})`, nowISO).run().catch(() => {});
-    }
+    // Identity strictly from authenticated session
+    const logId = `log_${Date.now()}`;
+    await env.DB.prepare(`
+      INSERT INTO audit_logs (id, admin_id, admin_name, action, details, timestamp)
+      VALUES (?, ?, ?, 'ADD_COMMUNITY', ?, ?);
+    `).bind(logId, adminUser.id, adminUser.name, `Created new campus: ${body.name} (${body.city})`, nowISO).run().catch(() => {});
 
     const newCommunity = {
       id,
@@ -183,12 +128,13 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
 
     return new Response(JSON.stringify({ success: true, community: newCommunity }), {
       status: 201,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    if (err instanceof Response) return err;
+    return new Response(JSON.stringify({ error: err.message || 'Failed to create campus.' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };

@@ -1,30 +1,24 @@
 import type { AppEnv, PagesFunction } from '../../../env';
 import { ensureD1Schema } from '../../../db';
-import { requireAuth, requireRole } from '../../../auth';
+import { requireAuth, requireRole, getCorsHeaders } from '../../../auth';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
-export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
+export const onRequestPut: PagesFunction<AppEnv> = async (context) => {
   const { env, params, request } = context;
   const userId = params.id as string;
+  const cors = getCorsHeaders(request);
 
   try {
     if (!env.DB) {
       return new Response(JSON.stringify({ error: 'Database service is unavailable.' }), {
         status: 503,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
@@ -32,57 +26,70 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     const adminUser = await requireAuth(request, env.DB);
     requireRole(adminUser, ['community_admin', 'platform_admin']);
 
-    const nowISO = new Date().toISOString();
-
-    const user = await env.DB.prepare(`SELECT name, status, email, campus_id FROM users WHERE id = ?;`).bind(userId).first<{ name: string; status: string; email: string; campus_id: string }>().catch(() => null);
+    const user = await env.DB.prepare(`SELECT name, email, status, campus_id FROM users WHERE id = ?;`).bind(userId).first<any>();
     if (!user) {
       return new Response(JSON.stringify({ error: 'User not found.' }), {
         status: 404,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
-    const newStatus = user.status === 'suspended' ? 'approved' : 'suspended';
+    // Campus admin can only toggle members belonging to their designated campus
+    if (adminUser.role === 'community_admin' && user.campus_id && user.campus_id !== adminUser.campusId) {
+      return new Response(JSON.stringify({ error: 'Forbidden: You can only moderate members in your designated campus.' }), {
+        status: 403,
+        headers: cors,
+      });
+    }
 
-    await env.DB.prepare(
-      `UPDATE users SET status = ? WHERE id = ?;`
-    ).bind(newStatus, userId).run();
+    const nextStatus = user.status === 'suspended' ? 'approved' : 'suspended';
+    await env.DB.prepare(`UPDATE users SET status = ? WHERE id = ?;`).bind(nextStatus, userId).run();
 
-    // If suspended, revoke all active sessions immediately
-    if (newStatus === 'suspended') {
+    // If suspended, immediately revoke active sessions
+    if (nextStatus === 'suspended') {
       await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?;`).bind(userId).run().catch(() => {});
     }
 
+    const nowISO = new Date().toISOString();
+    const actionText = nextStatus === 'suspended' ? 'Suspended member access' : 'Reactivated member access';
+
+    // Audit log with session-derived admin identity
     const logId = `log_${Date.now()}`;
     await env.DB.prepare(`
       INSERT INTO audit_logs (id, admin_id, admin_name, action, target_user_id, target_user_name, details, timestamp)
       VALUES (?, ?, ?, 'TOGGLE_STATUS', ?, ?, ?, ?);
-    `).bind(logId, adminUser.id, adminUser.name, userId, user.name, `Changed status for ${user.name} to ${newStatus}`, nowISO).run().catch(() => {});
-
-    const log = {
-      id: logId,
-      adminId: adminUser.id,
-      adminName: adminUser.name,
-      action: 'TOGGLE_STATUS' as const,
-      targetUserId: userId,
-      targetUserName: user.name,
-      details: `Changed status for ${user.name} to ${newStatus}`,
-      timestamp: nowISO,
-    };
+    `).bind(
+      logId,
+      adminUser.id,
+      adminUser.name,
+      userId,
+      user.name,
+      `${actionText} for ${user.name} (${user.email})`,
+      nowISO
+    ).run().catch(() => {});
 
     return new Response(
       JSON.stringify({
         success: true,
-        user: { id: userId, status: newStatus },
-        log,
+        user: { ...user, status: nextStatus },
+        log: {
+          id: logId,
+          adminId: adminUser.id,
+          adminName: adminUser.name,
+          action: 'TOGGLE_STATUS',
+          targetUserId: userId,
+          targetUserName: user.name,
+          details: `${actionText} for ${user.name} (${user.email})`,
+          timestamp: nowISO,
+        },
       }),
-      { status: 200, headers: CORS_HEADERS }
+      { status: 200, headers: cors }
     );
   } catch (err: any) {
     if (err instanceof Response) return err;
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err.message || 'Failed to update user status.' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };

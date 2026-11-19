@@ -1,30 +1,24 @@
 import type { AppEnv, PagesFunction } from '../../../env';
 import { ensureD1Schema } from '../../../db';
-import { requireAuth } from '../../../auth';
+import { requireAuth, getCorsHeaders } from '../../../auth';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
-
-export const onRequestOptions: PagesFunction<AppEnv> = async () => {
+export const onRequestOptions: PagesFunction<AppEnv> = async (context) => {
   return new Response(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(context.request),
   });
 };
 
 export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
   const { env, params, request } = context;
   const breakId = decodeURIComponent(params.id as string);
+  const cors = getCorsHeaders(request);
 
   try {
     if (!env.DB) {
       return new Response(JSON.stringify({ error: 'Database service is unavailable.' }), {
         status: 503,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
@@ -38,7 +32,7 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     if (!post) {
       return new Response(JSON.stringify({ error: 'Break not found' }), {
         status: 404,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
@@ -46,32 +40,22 @@ export const onRequestPost: PagesFunction<AppEnv> = async (context) => {
     if (post.user_id !== user.id && user.role !== 'community_admin' && user.role !== 'platform_admin') {
       return new Response(JSON.stringify({ error: 'Forbidden: You can only complete your own breaks.' }), {
         status: 403,
-        headers: CORS_HEADERS,
+        headers: cors,
       });
     }
 
-    const completedAt = Date.now() - 1000;
+    // Mark completed by expiring now
+    await env.DB.prepare(`UPDATE breaks SET expires_at = ? WHERE id = ?;`).bind(Date.now(), breakId).run();
 
-    await env.DB.prepare(
-      `UPDATE breaks SET expires_at = ? WHERE id = ?;`
-    ).bind(completedAt, breakId).run();
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        post: {
-          ...post,
-          expiresAt: completedAt,
-          status: 'completed',
-        },
-      }),
-      { status: 200, headers: CORS_HEADERS }
-    );
+    return new Response(JSON.stringify({ success: true, completedBreakId: breakId }), {
+      status: 200,
+      headers: cors,
+    });
   } catch (err: any) {
     if (err instanceof Response) return err;
     return new Response(JSON.stringify({ error: err.message || 'Failed to complete break' }), {
       status: 500,
-      headers: CORS_HEADERS,
+      headers: cors,
     });
   }
 };
