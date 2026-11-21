@@ -5,10 +5,10 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-midday_buddy}
       POSTGRES_USER: ${POSTGRES_USER:-midday}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_strong_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment}
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./postgres-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-midday} -d ${POSTGRES_DB:-midday_buddy}"]
       interval: 10s
@@ -23,8 +23,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER:-midday}:${POSTGRES_PASSWORD:-change_me_strong_password}@postgres:5432/${POSTGRES_DB:-midday_buddy}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin@12345}
+      # Uses local self-managed Postgres by default; override with Supabase DATABASE_URL to connect to Supabase instead
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-midday}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-midday_buddy}}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

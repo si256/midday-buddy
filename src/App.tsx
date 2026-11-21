@@ -74,6 +74,8 @@ export default function App() {
   const [resetRequests, setResetRequests] = React.useState<PasswordResetRequest[]>([]);
   const [notifications, setNotifications] = React.useState<AppNotification[]>([]);
   const [syncError, setSyncError] = React.useState<string | null>(null);
+  const hasSyncErrorRef = React.useRef(false);
+  hasSyncErrorRef.current = Boolean(syncError);
 
   // Navigation & View State (with URL routing support for /admin)
   const [activeView, setActiveView] = React.useState<'board' | 'admin' | 'architecture'>(() => {
@@ -219,9 +221,9 @@ export default function App() {
   React.useEffect(() => {
     syncWithBackend();
 
-    // Visibility-aware polling: pause requests when tab is hidden, resume on focus
+    // Visibility-aware polling: pause requests when tab is hidden or backend is unavailable
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && !document.hidden) {
+      if (typeof document !== 'undefined' && !document.hidden && !hasSyncErrorRef.current) {
         syncWithBackend();
       }
     }, 6000);
@@ -609,8 +611,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Backend Connectivity Banner (Only shown on real API failure) */}
-      {syncError && (
+      {/* Inline Retry Banner (Shown only for signed-in sessions when sync fails) */}
+      {currentUser && syncError && (
         <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
             <span>{syncError}</span>
